@@ -77,25 +77,17 @@ def getPhrase(headID, phrase, skip = []):
     newPhrase = {'doc': phrase['doc'], 'phraseDF': head,
                  'phrase': form,
                  'sentID': phrase['sentID']};
-    ##print(newPhrase['phraseDF'])
     while i <= df.shape[0]:
         depString = df.loc[df['ID'] == i,df.columns.values=="DEPS"];
         if depString.shape[0] != 0:
             depString = depString.iloc[0,0];
             depString = depString.split("|");
-            #print(depString)
             matchFound = False;
             for pair in depString:
-                #print(pair)
                 if re.match(str(headID)+":",pair):
                     matchFound = True;
             if matchFound & (i not in skip):
-                #print(i)
-                #print(skip)
-               ## print(df.iloc[i-1,:]);
                newPhrase = unifyPhrases(newPhrase, getPhrase(i,phrase,[headID]+skip));
-               ## print(newPhrase)
-                #newPhrase['phraseDF'] = newPhrase['phraseDF'].append(df.iloc[i-1,:]);
                 
         i += 1;
     newPhrase['phraseDF'] = newPhrase['phraseDF'].sort_values(by=['ID'])
@@ -116,9 +108,7 @@ def getDependent(headID, relation, phrase):
         searchString = df["DEPS"].iloc[i-1];
         searchString = searchString.split("|");
         matchFound = False;
-        print(searchString)
         for pair in searchString:
-            print(pair)
             if re.match(dep,pair):
                 matchFound = True;
         if matchFound:
@@ -141,7 +131,6 @@ def getDependents(headID, relation, phrase):
             if re.match(dep,pair):
                 matchFound = True;
         if matchFound:
-            #print("i: " + str(i));
             newPhrases.append(getPhrase(i, phrase));
         i += 1;
             
@@ -183,13 +172,18 @@ def getInfoFromFeats(feats):
 #if only one head expected, use [0]
 def getHeads(parentID, phrase):
     i = 0;
+    print("PID",parentID)
     df = phrase['phraseDF'];
     heads = [];
     while i < df.shape[0]:
-        if re.search(str(parentID),df.iloc[i,]["DEPS"]):
+        print("[\||^]"+str(parentID)+":")
+        print(df.iloc[i,]["DEPS"])
+        if re.search("\|"+str(parentID)+":",df.iloc[i,]["DEPS"]) or re.search("^"+str(parentID)+":",df.iloc[i,]["DEPS"]):
+            print("hey")
             heads.append(df.iloc[i,]);
         i += 1;
     if heads == []: heads == [None]; print("heynohead");
+    print(heads);
     return(heads);
         
 def doNothing():
@@ -230,7 +224,6 @@ def isHyponym(hyponym, synset_hypernym, proper=False):
         synsets_hyponym = [hyponym];
     answer = False;
     for synset_hyponym in synsets_hyponym:
-        #print(synsets_hyponym);
         if synset_hypernym in synset_hyponym.hypernyms():
             answer = True;
             break;
@@ -462,7 +455,12 @@ def extractNPHeadProperties(heads, prefix = ""):
      return(outputProps)
 
 
-allSentsR = allSents[1:20] #R stands for reduced and is for testing purposes
+
+nomSemExceptions = ["member"]
+
+allSentsR = allSents[14:15] #R stands for reduced and is for testing purposes
+
+#TODO: Embedding depth, idiomaticity, 
 
 clauseTableColnames = ["ClauseID","Doc","SentID","SentForm",
                             "VForm","VLemma","VMorph","VMorphForm","VTense",
@@ -477,6 +475,12 @@ clauseTableColnames = ["ClauseID","Doc","SentID","SentForm",
                        
     
 clauseTable = pandas.DataFrame(columns=clauseTableColnames);
+
+#Accepting multiple values: SubjHead, SubjFreq, SubjDef, SubjAnim, SubjSynType, SubjMorph
+#Combined: SubjSylCo, SubjNum, SubjPers
+
+
+
 
 #This is the clause ID WITHIN DOCUMENTS.
 #We'll add an overall ID at the end. No need to sweat it.
@@ -602,12 +606,11 @@ for sentence in allSentsR:
                     
                     for prop in subjHeadProps:
                         currentRow[prop] = subjHeadProps[prop];                
-                #Accepting multiple values: SubjHead, SubjFreq, SubjDef, SubjAnim, SubjSynType, SubjMorph
-                #Combined: SubjSylCo, SubjNum, SubjPers
 
-                currObject = getDependents(i+1,"iobj",sentence)
+                print("objStart");
+                currObject = getDependents(i+1,"iobj",sentence);
                 if len(currObject) == 0:
-                    currObject = getDependents(i+1,"obj",sentence)
+                    currObject = getDependents(i+1,"obj",sentence);
                     currentRow["OvertIObj"] = 0;
                 else:
                     currentRow["OvertIObj"] = 1;
@@ -637,7 +640,6 @@ for sentence in allSentsR:
                                             # ,sort=False)
         
 print(clauseTable)
-
 clauseTable.to_csv(path_or_buf="sept19table.csv")
 
 
