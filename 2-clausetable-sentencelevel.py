@@ -7,12 +7,13 @@ This is a temporary script file.
 
 #Run this whenever restarting.
 import os;
-#os.chdir("G:\我的雲端硬碟\corpus priming\eng")
-os.chdir("G:\My Drive\corpus priming\eng")
+os.chdir("G:\我的雲端硬碟\corpus priming\eng")
+#os.chdir("G:\My Drive\corpus priming\eng")
 import pandas;
 import re;
 import shelve;
 import numpy as np;
+from wordfreq import word_frequency;
 from nltk.stem import WordNetLemmatizer
 wnl = WordNetLemmatizer()
 import nltk;
@@ -106,7 +107,6 @@ def getPhrase(headID, phrase, skip = []):
 #Test the function
 print(getPhrase(19,allSents[0]));
 
-#Todo: getDependentS
 def getDependent(headID, relation, phrase):
     df = phrase['phraseDF'];
     dep = str(headID) + ":" + relation;
@@ -177,15 +177,20 @@ def getInfoFromFeats(feats):
             info[name] = value;
     return(info);
 
-def getHead(parentID, phrase):
+#parentID is the ID of the parent
+#phrase is the phrase containing the head, not the full sentence
+#returns rows not entire tables
+#if only one head expected, use [0]
+def getHeads(parentID, phrase):
     i = 0;
     df = phrase['phraseDF'];
-    head = 0;
+    heads = [];
     while i < df.shape[0]:
         if re.search(str(parentID),df.iloc[i,]["DEPS"]):
-            head = df.iloc[i,];
+            heads.append(df.iloc[i,]);
         i += 1;
-    return(head);
+    if heads == []: heads == [None]; print("heynohead");
+    return(heads);
         
 def doNothing():
     a = 1;
@@ -237,6 +242,64 @@ def isHyponym(hyponym, synset_hypernym, proper=False):
             if synset_hyponym == synset_hypernym:
                 answer = True;
     return answer;
+
+def getNomSem(npHead, phrase, ner = False):
+    #Word - subjectHead["FORM"], lemma - lemma, sentence - sentence["phrase"]
+    #ner = currentRow["SubjMorph"] in ["NNP","NNPS"]
+    
+    anim = "/";
+    word = npHead["FORM"];
+    lemma = npHead["LEMMA"];
+    headID = npHead["ID"];
+    sentence = phrase['phrase']
+    
+    if ner:
+        nertree = ne_chunk(pos_tag(word_tokenize(sentence)));                      
+        first = True;
+        for subtree in nertree.subtrees():   
+            if first == False:
+                containsHead = False;
+                for word in subtree:
+                    if word[1] == word:
+                        containsHead = True;
+                if containsHead:                                        
+                    if subtree.label() == "PERSON":
+                        anim = "human";
+                    elif subtree.label() == "GPE":
+                        anim = "loc";
+                    elif subtree.label() == "ORGANIZATION":
+                        anim = "org";
+                    elif subtree.label() == "PERSON":
+                        anim = "org";
+            first = False;
+    elif (lemma in ["I","you","we","he","she","me","him","her","us"]):
+        anim = "human";
+    elif isHyponym(lemma,synset_machine):
+        anim = "machine";
+    elif isHyponym(lemma,synset_vehicle):
+        anim = "vehicle";
+    elif isHyponym(lemma,synset_org):
+        anim = "org";
+    elif isHyponym(lemma,synset_human) | isHyponym(lemma,synset_person):
+        anim = "human";
+    elif isHyponym(lemma,synset_animal)| isHyponym(lemma,synset_bacterium) | isHyponym(lemma,synset_virus):
+        anim = "animal";
+    elif isHyponym(lemma,synset_time) | isHyponym(lemma,synset_period):
+        anim = "time";
+    elif isHyponym(lemma,synset_loc):
+        anim = "loc";
+    elif isHyponym(lemma,synset_conc):
+        anim = "conc";
+    elif isHyponym(lemma,synset_nonconc):
+        anim = "nonconc";
+    
+    appos = getDependents(headID, "appos", phrase)
+    if (anim == "/") & (len(appos) > 0):
+        appos = appos[0];
+        apposHead = getHeads(npHead["ID"], phrase)[0];
+        anim = getNomSem(apposHead, phrase, apposHead["XPOS"] in ["NNP","NNPS"]);        
+    return anim;
+
     
 synset_human = wn.synsets('human')[0];
 synset_person = wn.synsets('person')[0];
@@ -254,23 +317,163 @@ synset_virus = wn.synsets('virus')[0];
 synset_bacterium = wn.synsets('bacterium')[0];
 synset_building = wn.synsets('building')[0];
 
-#Part III: Converting raw data (a database of sentences)
+# Converting raw data (a database of sentences)
 # to a database of clauses (which I want for my project),
 # first step: Put each clause in one row and extract
 # directly expressed arguments
-
-
 nomSemExceptions = ["member"]
 
-allSentsR = allSents[0:10] #R stands for reduced and is for testing purposes
+
+#Accepting multiple values: SubjHead, SubjFreq, SubjDef, SubjAnim, SubjSynType, SubjMorph
+#Combined: SubjSylCo, SubjNum, SubjPers
+
+
+
+def extractNPHeadProperties(heads, prefix = ""):
+     #This is divided into two sub-modules
+     #The first part is extracting the features
+     #The second part is combining them
+     
+     outputProps = dict()
+     
+     #Part I: Extraction
+     
+     headPropsSep = [];
+     
+     for head in heads:
+        feats = getInfoFromFeats(head['FEATS']);
+        currProps = dict()
+        
+        #Note: The first line of each property must start with an
+        #unconditional assignment to ensure that key errors won't
+        #occur later on
+        
+        #Morphology
+        currProps["Morph"] = head["XPOS"];
+        
+        #Head
+        currProps["Head"] = head["FORM"];
+        
+        #POS
+        currProps["XPOS"] = "/";
+        if head["XPOS"] in ["NN","NNS"]:
+            currProps["SynType"] = "full";
+        elif head["XPOS"] in ["NNP","NNPS"]:
+            currProps["SynType"] = "proper";
+        elif head["XPOS"] in ["DT"]:
+            if getValueFromInfo(feats, "Prontype") == "Dem":
+                currProps["SynType"] = "dem";
+            else:
+                currProps["SynType"] = "det";
+            currProps["SynType"] = "det";
+        elif head["XPOS"] in ["EX"]:
+            currProps["SynType"] = "there";
+        elif head["XPOS"] in ["WP","WDT"]:
+            currProps["SynType"] = "wh";
+        elif head["XPOS"] in ["PRP"]:
+            if currProps["Head"] in ["mine","yours","his",
+                         "hers","its","ours","theirs"]:
+                currProps["SynType"] = "poss";                            
+            else:
+                currProps["SynType"] = "pron";
+        elif head["XPOS"] == "CD":
+            currProps["SynType"] = "num";
+        elif head["XPOS"] == "/":
+            currProps["SynType"] = "/";
+        else:
+            currProps["SynType"] = "NMN!";
+            
+        #Frequency
+        currProps["Freq"] = word_frequency(head["FORM"], 'en')
+        
+        #Number
+        currProps["Num"] = getValueFromInfo(feats, "Number");
+        if currProps["Num"] =="/":
+            if head["XPOS"] == "CD":
+                if head["LEMMA"] == "one":
+                    currProps["Num"] = "Sing";
+                else:
+                    currProps["Num"] = "Plur";
+                    
+        #Person   
+        currProps["Pers"] = getValueFromInfo(feats, "Person");
+        if (currProps["Pers"] == "/"):
+            currProps["Pers"] = "3"
+            
+        #Definiteness        
+        currProps["Def"] = "/";
+        currDeterminers = getDependents(head["ID"],"det",sentence)
+        for determiner in currDeterminers:
+            detHead = getHeads(head["ID"],determiner)[0]
+            defInfo = getInfoFromFeats(detHead["FEATS"])
+            if (getValueFromInfo(defInfo,"Definite") == "Def") | (getValueFromInfo(defInfo,"PronType") == "Dem"):
+                currProps["Def"] = "def";
+            elif getValueFromInfo(defInfo,"Definite") == "Ind":
+                currProps["Def"] = "indef";
+            
+        if currProps["Def"] == "/":                        
+            if head["XPOS"] in ["PRP","NNP"]:
+                currProps["Def"] = "def";
+            else:
+                currProps["Def"] = "indef";                            
+        #Doubt: every and all???
+    
+        #Animacy          
+        #We will be working with the animacy tags from 
+        #Zaenen et al. (2004)
+        #human, org, animal, place, time,
+        #concrete, nonconc, mac, veh
+        currProps["Anim"] = getNomSem(head,sentence,
+                  head["XPOS"] in ["NNP","NNPS"])
+            
+        #Exceptions
+        if head["LEMMA"] in nomSemExceptions: 
+            currProps["Anim"] = "NMA!";
+            
+        headPropsSep.append(currProps)
+    
+     #Part II: Combination
+     multValProps = ["Head", "Freq", "Def", "Anim",
+                        "SynType", "Morph"];
+     for prop in multValProps:
+         currString = "";
+         for headProps in headPropsSep:
+             currString = currString + str(headProps[prop]) + ";;";
+         currString = currString[0:(len(currString)-2)];
+         outputProps[prefix + prop] = currString;
+        
+     #SubjNum
+     if len(heads) > 1:
+         outputProps[prefix + "Num"] = "Plur";
+     else:
+         outputProps[prefix + "Num"] = headPropsSep[0][prop];
+         
+     #SubjPers
+     persons = []
+     for headProps in headPropsSep:
+         persons.append(headPropsSep[0]["Pers"]);
+     if "1" in persons:
+         outputProps[prefix + "Pers"] = "1";
+     elif "2" in persons:
+         outputProps[prefix + "Pers"] = "2";
+     else:
+         outputProps[prefix + "Pers"] = "3";
+         
+     return(outputProps)
+
+
+allSentsR = allSents[1:20] #R stands for reduced and is for testing purposes
 
 clauseTableColnames = ["ClauseID","Doc","SentID","SentForm",
-                            "VForm","VLemma","VMorph","VMorphForm","VTense","VAspect","Voice",
-                            "VSylCo","Aux3","Aux2","Aux1","PassAux","VClass","OvertSubj",
-                            "OvertSubjHead","SubjDef","SubjNum","SubjPers","SubjAnim","SubjSynType",
-                            "SubjSylCo","SubjMorph","OvertObj","OvertIObj","OvertObjHead",
-                            "ObjDef","ObjNum","ObjPers","ObjAnim","ObjSylCo","ObjMorph",
-                            "ObjSynType","OvertObl1","Obl2","Obl3","Obl4","Obl5"];
+                            "VForm","VLemma","VMorph","VMorphForm","VTense",
+                            "VAspect","Voice","VSylCo","VFreq","Aux3","Aux2","Aux1",
+                            "PassAux","VClass","OvertSubj",
+                            "SubjHead","SubjFreq","SubjDef","SubjNum",
+                            "SubjPers","SubjAnim","SubjSynType",
+                            "SubjSylCo","SubjMorph","OvertObj","OvertIObj","ObjFreq",
+                            "ObjHead","ObjDef","ObjNum","ObjPers","ObjAnim",
+                            "ObjSylCo","ObjMorph","ObjSynType","OvertObl1",
+                            "Obl2","Obl3","Obl4","Obl5"];
                        
     
 clauseTable = pandas.DataFrame(columns=clauseTableColnames);
@@ -306,7 +509,6 @@ for sentence in allSentsR:
             #Now for clause-level stuff. First the V/A.
             featsInfo = getInfoFromFeats(df.iloc[i,]["FEATS"])
             if predTypes[j] == "V":
-                #print("hihihihi1")
                 
                 #Verb form stuff.
                 currentRow["VForm"] = df.iloc[i,]["FORM"];
@@ -319,7 +521,7 @@ for sentence in allSentsR:
                 k = len(auxiliaries);
                 #Fill up auxiliaries
                 for aux in auxiliaries:
-                    auxHead = getHead(i+1,aux);
+                    auxHead = getHeads(i+1,aux)[0];
                     auxLemmas[k-1] = auxHead["LEMMA"];
                     auxInfo = getInfoFromFeats(auxHead["FEATS"]);
                     currentRow["Aux" + str(k)] = auxHead["FORM"];
@@ -334,13 +536,17 @@ for sentence in allSentsR:
                     
                 #Syllable count. Simple!
                 currentRow["VSylCo"] = sylCount(df.iloc[i,]["FORM"]);
+                
+                #Verb freq
+                currentRow["VFreq"] = word_frequency(currentRow["VForm"], 'en')
+
                     
                 #More abstract grammatical categories
                 if featsInfo["VerbForm"] == "Fin":
                     currentRow["VTense"] = getValueFromInfo(featsInfo,"Tense");
                 else:
                     for aux in auxiliaries:
-                        auxHead = getHead(i+1,aux);
+                        auxHead = getHeads(i+1,aux)[0];
                         auxInfo = getInfoFromFeats(auxHead["FEATS"]);
                         if auxInfo["VerbForm"] == "Fin":
                             if "Tense" in auxInfo:
@@ -385,265 +591,45 @@ for sentence in allSentsR:
                 else:
                     currentRow["OvertSubj"] = currSubject[0]["phrase"];
                     currSubject = currSubject[0];
-                    
-                if currSubject != "NOSUBJ":
-                    subjectHead = getHead(i+1,currSubject);
-                    subjectFeats = getInfoFromFeats(subjectHead['FEATS']);
-                    currentRow["SubjSylCo"] = sylCount(currentRow["OvertSubj"]);
-                    currentRow["SubjMorph"] = subjectHead["XPOS"];
-                    
-                    currentRow["OvertSubjHead"] = subjectHead["FORM"];
-                    
-                    if currentRow["SubjMorph"] in ["NN","NNS"]:
-                        currentRow["SubjSynType"] = "full";
-                    elif currentRow["SubjMorph"] in ["NNP","NNPS"]:
-                        currentRow["SubjSynType"] = "proper";
-                    elif currentRow["SubjMorph"] in ["DT"]:
-                        if getValueFromInfo(subjectFeats, "Prontype") == "Dem":
-                            currentRow["SubjSynType"] = "dem";
-                        else:
-                            currentRow["SubjSynType"] = "det";
-                        currentRow["SubjSynType"] = "det";
-                    elif currentRow["SubjMorph"] in ["EX"]:
-                        currentRow["SubjSynType"] = "there";
-                    elif currentRow["SubjMorph"] in ["WP","WDT"]:
-                        currentRow["SubjSynType"] = "wh";
-                    elif currentRow["SubjMorph"] in ["PRP"]:
-                        if currentRow["OvertSubj"] in ["mine","yours","his",
-                                     "hers","its","ours","theirs"]:
-                            currentRow["SubjSynType"] = "poss";                            
-                        else:
-                            currentRow["SubjSynType"] = "pron";
-                    elif currentRow["SubjMorph"] == "CD":
-                        currentRow["SubjSynType"] = "num";
-                    elif currentRow["SubjMorph"] == "/":
-                        currentRow["SubjSynType"] = "/";
-                    else:
-                        currentRow["SubjSynType"] = "NMN!";
-                        
-                    
-                    #Number
-                    currentRow["SubjNum"] = getValueFromInfo(subjectFeats, "Number");
-                    if currentRow["SubjNum"] =="/":
-                        if subjectHead["XPOS"] == "CD":
-                            if subjectHead["LEMMA"] == "one":
-                                currentRow["SubjNum"] = "Sing";
-                            else:
-                                currentRow["SubjNum"] = "Plur";
-                                
-                    #Person   
-                    currentRow["SubjPers"] = getValueFromInfo(subjectFeats, "Person");
-                    if (currentRow["SubjPers"] == "/") & (currentRow["OvertSubj"] != "/"):
-                        currentRow["SubjPers"] = "3"
-                        
-                    #Definiteness
-                    currDeterminers = getDependents(subjectHead["ID"],"det",sentence)
-                    print(currDeterminers)
-                    for determiner in currDeterminers:
-                        detHead = getHead(subjectHead["ID"],determiner)
-                        #print('detHead')
-                        #print(detHead)
-                        defInfo = getInfoFromFeats(detHead["FEATS"])
-                        print("PRONTYPE",getValueFromInfo(defInfo,"PronType"))
-                        if (getValueFromInfo(defInfo,"Definite") == "Def") | (getValueFromInfo(defInfo,"PronType") == "Dem"):
-                            currentRow["SubjDef"] = "def";
-                        elif getValueFromInfo(defInfo,"Definite") == "Ind":
-                            currentRow["SubjDef"] = "indef";
-                        
-                    if currentRow["SubjDef"] == "/":                        
-                        if currentRow["SubjMorph"] in ["PRP","NNP"]:
-                            currentRow["SubjDef"] = "def";
-                        else:
-                            currentRow["SubjDef"] = "indef";                            
-                    #Doubt: every and all???
                 
-                    #Animacy          
-                    #We will be working with the animacy tags from 
-                    #Zaenen et al. (2004)
-                    #human, org, animal, place, time,
-                    #concrete, nonconc, mac, veh
-                    if currentRow["SubjMorph"] == ["PRP"]:
-                        if currentRow["OvertSubj"] in ["I","me","he","she","him","her"]:
-                            currentRow["SubjAnim"] = "human";
-                    elif currentRow["SubjMorph"] in ["NNP","NNPS"]:
-                        nertree = ne_chunk(pos_tag(word_tokenize(sentence["phrase"])));                      
-                        first = True;
-                        for subtree in nertree.subtrees():                                
-                            if first == False:
-                                containsHead = False;
-                                for word in subtree:
-                                    if word[1] == subjectHead["FORM"]:
-                                        containsHead = True;
-                                if containsHead:                                        
-                                    if subtree.label() == "PERSON":
-                                        currentRow["SubjAnim"] = "human";
-                                    elif subtree.label() == "GPE":
-                                        currentRow["SubjAnim"] = "loc";
-                                    elif subtree.label() == "ORGANIZATION":
-                                        currentRow["SubjAnim"] = "org";
-                                    elif subtree.label() == "PERSON":
-                                        currentRow["SubjAnim"] = "org";
-                            first = False;
-                    elif (subjectHead["LEMMA"] in ["I","you","we","he","she","it","me","him","her","us"]):
-                        currentRow["SubjAnim"] = "human";
-                    elif isHyponym(subjectHead["LEMMA"],synset_machine):
-                        currentRow["SubjAnim"] = "machine";
-                    elif isHyponym(subjectHead["LEMMA"],synset_vehicle):
-                        currentRow["SubjAnim"] = "vehicle";
-                    elif isHyponym(subjectHead["LEMMA"],synset_org):
-                        currentRow["SubjAnim"] = "org";
-                    elif isHyponym(subjectHead["LEMMA"],synset_human) | isHyponym(subjectHead["LEMMA"],synset_person):
-                        currentRow["SubjAnim"] = "human";
-                    elif isHyponym(subjectHead["LEMMA"],synset_animal)| isHyponym(subjectHead["LEMMA"],synset_bacterium) | isHyponym(subjectHead["LEMMA"],synset_virus):
-                        currentRow["SubjAnim"] = "animal";
-                    elif isHyponym(subjectHead["LEMMA"],synset_time) | isHyponym(subjectHead["LEMMA"],synset_period):
-                        currentRow["SubjAnim"] = "time";
-                    elif isHyponym(subjectHead["LEMMA"],synset_loc):
-                        currentRow["SubjAnim"] = "loc";
-                    elif isHyponym(subjectHead["LEMMA"],synset_conc):
-                        currentRow["SubjAnim"] = "conc";
-                    elif isHyponym(subjectHead["LEMMA"],synset_nonconc):
-                        currentRow["SubjAnim"] = "nonconc";
-                        
+                if currSubject != "NOSUBJ":
+                    #Features that don't take heads into account                        
+                    currentRow["SubjSylCo"] = sylCount(currentRow["OvertSubj"]);
                     
+                    #Features that do take head into account
+                    subjectHeads = getHeads(i+1,currSubject);
+                    subjHeadProps = extractNPHeadProperties(subjectHeads,"Subj");
+                    
+                    for prop in subjHeadProps:
+                        currentRow[prop] = subjHeadProps[prop];                
+                #Accepting multiple values: SubjHead, SubjFreq, SubjDef, SubjAnim, SubjSynType, SubjMorph
+                #Combined: SubjSylCo, SubjNum, SubjPers
+
                 currObject = getDependents(i+1,"iobj",sentence)
                 if len(currObject) == 0:
                     currObject = getDependents(i+1,"obj",sentence)
+                    currentRow["OvertIObj"] = 0;
+                else:
                     currentRow["OvertIObj"] = 1;
                     
                     
                 if len(currObject) != 0:
                     currentRow["OvertObj"] = currObject[0]['phrase'];
                     currObject = currObject[0];
-                    if currentRow["OvertIObj"] != 1:
-                        currentRow["OvertIObj"] = 0;
                 else:
                     currObject = "NOOBJ";
 
                 if currObject != "NOOBJ":
-                    print(currentRow["OvertObj"])
-                    objectHead = getHead(i+1,currObject);
-                    objectFeats = getInfoFromFeats(objectHead['FEATS']);
-                    currentRow["SubjSylCo"] = sylCount(currentRow["OvertObj"]);
-                    currentRow["ObjMorph"] = objectHead["XPOS"];
+                    #Features that don't take heads into account
+                    currentRow["ObjSylCo"] = sylCount(currentRow["OvertObj"]);
                     
-                    currentRow["OvertObjHead"] = objectHead["FORM"];
+                    #Features that do take head into account
+                    objectHeads = getHeads(i+1,currObject);
+                    objHeadProps = extractNPHeadProperties(objectHeads,"Obj");
                     
-                    if currentRow["ObjMorph"] in ["NN","NNS"]:
-                        currentRow["ObjSynType"] = "full";
-                    elif currentRow["ObjMorph"] in ["NNP","NNPS"]:
-                        currentRow["ObjSynType"] = "proper";
-                    elif currentRow["ObjMorph"] in ["DT"]:
-                        if getValueFromInfo(objectFeats, "Prontype") == "Dem":
-                            currentRow["ObjSynType"] = "dem";
-                        else:
-                            currentRow["ObjSynType"] = "det";
-                        currentRow["ObjSynType"] = "det";
-                    elif currentRow["ObjMorph"] in ["EX"]:
-                        currentRow["ObjSynType"] = "there";
-                    elif currentRow["ObjMorph"] in ["WP","WDT"]:
-                        currentRow["ObjSynType"] = "wh";
-                    elif currentRow["ObjMorph"] in ["PRP"]:
-                        if currentRow["OvertObj"] in ["mine","yours","his",
-                                     "hers","its","ours","theirs"]:
-                            currentRow["ObjSynType"] = "poss";                            
-                        else:
-                            currentRow["ObjSynType"] = "pron";
-                    elif currentRow["ObjMorph"] == "CD":
-                        currentRow["ObjSynType"] = "num";
-                    elif currentRow["ObjMorph"] == "/":
-                        currentRow["ObjSynType"] = "/";
-                        print("Yay!")
-                    else:
-                        currentRow["ObjSynType"] = "NMN!";
-                        
-                    print(currentRow["ObjSynType"])
-
-                    #Number
-                    currentRow["ObjNum"] = getValueFromInfo(objectFeats, "Number");
-                    if currentRow["ObjNum"] =="/":
-                        if objectHead["XPOS"] == "CD":
-                            if objectHead["LEMMA"] == "one":
-                                currentRow["ObjNum"] = "Sing";
-                            else:
-                                currentRow["ObjNum"] = "Plur";
-                                
-                    #Person   
-                    currentRow["ObjPers"] = getValueFromInfo(objectFeats, "Person");
-                    if (currentRow["ObjPers"] == "/") & (currentRow["OvertObj"] != "/"):
-                        currentRow["ObjPers"] = "3"
-                        
-                    #Definiteness
-                    currDeterminers = getDependents(objectHead["ID"],"det",sentence)
-                    print(currDeterminers)
-                    for determiner in currDeterminers:
-                        detHead = getHead(objectHead["ID"],determiner)
-                        defInfo = getInfoFromFeats(detHead["FEATS"])
-                        print("PRONTYPE",getValueFromInfo(defInfo,"PronType"))
-                        if (getValueFromInfo(defInfo,"Definite") == "Def") | (getValueFromInfo(defInfo,"PronType") == "Dem"):
-                            currentRow["ObjDef"] = "def";
-                        elif getValueFromInfo(defInfo,"Definite") == "Ind":
-                            currentRow["ObjDef"] = "indef";
-                        
-                    if currentRow["ObjDef"] == "/":                        
-                        if currentRow["ObjMorph"] in ["PRP","NNP"]:
-                            currentRow["ObjDef"] = "def";
-                        else:
-                            currentRow["ObjDef"] = "indef";                            
-                    #Doubt: every and all???
-                
-                    #Animacy          
-                    #We will be working with the animacy tags from 
-                    #Zaenen et al. (2004)
-                    #human, org, animal, place, time,
-                    #concrete, nonconc, mac, veh
-                    if currentRow["ObjMorph"] == ["PRP"]:
-                        if currentRow["OvertObj"] in ["I","me","he","she","him","her"]:
-                            currentRow["ObjAnim"] = "human";
-                    elif currentRow["ObjMorph"] in ["NNP","NNPS"]:
-                        nertree = ne_chunk(pos_tag(word_tokenize(sentence["phrase"])));                      
-                        first = True;
-                        for subtree in nertree.subtrees():                                
-                            if first == False:
-                                containsHead = False;
-                                for word in subtree:
-                                    if word[1] == objectHead["FORM"]:
-                                        containsHead = True;
-                                if containsHead:                                        
-                                    if subtree.label() == "PERSON":
-                                        currentRow["ObjAnim"] = "human";
-                                    elif subtree.label() == "GPE":
-                                        currentRow["ObjAnim"] = "loc";
-                                    elif subtree.label() == "ORGANIZATION":
-                                        currentRow["ObjAnim"] = "org";
-                                    elif subtree.label() == "PERSON":
-                                        currentRow["ObjAnim"] = "org";
-                            first = False;
-                    elif (objectHead["LEMMA"] in ["I","you","we","he","she","it","me","him","her","us"]):
-                        currentRow["ObjAnim"] = "human";
-                    elif isHyponym(objectHead["LEMMA"],synset_machine):
-                        currentRow["ObjAnim"] = "machine";
-                    elif isHyponym(objectHead["LEMMA"],synset_vehicle):
-                        currentRow["ObjAnim"] = "vehicle";
-                    elif isHyponym(objectHead["LEMMA"],synset_org):
-                        currentRow["ObjAnim"] = "org";
-                    elif isHyponym(objectHead["LEMMA"],synset_human) | isHyponym(objectHead["LEMMA"],synset_person):
-                        currentRow["ObjAnim"] = "human";
-                    elif isHyponym(objectHead["LEMMA"],synset_animal)| isHyponym(objectHead["LEMMA"],synset_bacterium) | isHyponym(objectHead["LEMMA"],synset_virus):
-                        currentRow["ObjAnim"] = "animal";
-                    elif isHyponym(objectHead["LEMMA"],synset_time) | isHyponym(objectHead["LEMMA"],synset_period):
-                        currentRow["ObjAnim"] = "time";
-                    elif isHyponym(objectHead["LEMMA"],synset_loc):
-                        currentRow["ObjAnim"] = "loc";
-                    elif isHyponym(objectHead["LEMMA"],synset_conc):
-                        currentRow["ObjAnim"] = "conc";
-                    elif isHyponym(objectHead["LEMMA"],synset_nonconc):
-                        currentRow["ObjAnim"] = "nonconc";
-                        
-                    #Exceptions
-                    if objectHead["LEMMA"] in nomSemExceptions: 
-                        currentRow["ObjAnim"] = "NMA!";
-                        
+                    for prop in objHeadProps:
+                        currentRow[prop] = objHeadProps[prop];
+                    
             #And now the arguments
             currentClauseID += 1;
             j += 1;
@@ -652,7 +638,7 @@ for sentence in allSentsR:
         
 print(clauseTable)
 
-clauseTable.to_csv(path_or_buf="jul19table.csv")
+clauseTable.to_csv(path_or_buf="sept19table.csv")
 
 
 #NMA! = Needs Manual Attention!
