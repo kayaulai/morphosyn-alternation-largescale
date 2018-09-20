@@ -8,6 +8,7 @@ This is a temporary script file.
 #Run this whenever restarting.
 import os;
 os.chdir("G:\我的雲端硬碟\corpus priming\eng")
+import warnings;
 #os.chdir("G:\My Drive\corpus priming\eng")
 import pandas;
 import re;
@@ -35,7 +36,6 @@ s.close();
 pandas.set_option("max_columns",50)
 
 #End runthis
-
 sentence1 = "Mark and John are working in the United States, while Mary found a pig in Europe.";
 print (ne_chunk(pos_tag(word_tokenize(allSents[2]['phrase']))));
 
@@ -118,7 +118,7 @@ def getDependent(headID, relation, phrase):
             
     return newPhrase;
 
-def getDependents(headID, relation, phrase):
+def getDependents(headID, relation, phrase, depOnly = True):
     df = phrase['phraseDF'];
     dep = str(headID) + ":" + relation;
     i = 1;
@@ -130,11 +130,26 @@ def getDependents(headID, relation, phrase):
         for pair in searchString:
             if re.match(dep,pair):
                 matchFound = True;
+        if not depOnly:
+            if str(headID) == df["HEAD"].iloc[i-1]: matchFound = True;
         if matchFound:
             newPhrases.append(getPhrase(i, phrase));
         i += 1;
             
     return newPhrases;
+
+def getDependentsFromDeprel(headID, relation, phrase):
+    df = phrase['phraseDF'];
+    i = 1;
+    newPhrases = [];
+    while i <= df.shape[0]:
+        if (df["HEAD"].iloc[i-1] == str(headID)) & (df["DEPREL"].iloc[i-1] == relation):
+            newPhrases.append(getPhrase(i, phrase));
+        i += 1;
+            
+    return newPhrases;
+
+
 #Test the function
 getDependents(7,"obj",allSents[0])
 
@@ -155,7 +170,6 @@ def getParents(childID, phrase):
     return parents;
 
 print(getParents(2,allSents[0]));
-
 def getInfoFromFeats(feats):
     info = {};
     if feats != "_":
@@ -172,18 +186,14 @@ def getInfoFromFeats(feats):
 #if only one head expected, use [0]
 def getHeads(parentID, phrase):
     i = 0;
-    print("PID",parentID)
     df = phrase['phraseDF'];
     heads = [];
     while i < df.shape[0]:
-        print("[\||^]"+str(parentID)+":")
-        print(df.iloc[i,]["DEPS"])
-        if re.search("\|"+str(parentID)+":",df.iloc[i,]["DEPS"]) or re.search("^"+str(parentID)+":",df.iloc[i,]["DEPS"]):
-            print("hey")
+        if re.search("\|"+str(parentID)+":",df.iloc[i,]["DEPS"]) or re.search("^"+str(parentID)+":",df.iloc[i,]["DEPS"]) or (df.iloc[i,]["HEAD"] == str(parentID)):
             heads.append(df.iloc[i,]);
         i += 1;
     if heads == []: heads == [None]; print("heynohead");
-    print(heads);
+    #TODO: RELATIVE PRONOUNS!!
     return(heads);
         
 def doNothing():
@@ -235,6 +245,33 @@ def isHyponym(hyponym, synset_hypernym, proper=False):
             if synset_hyponym == synset_hypernym:
                 answer = True;
     return answer;
+
+def extractRefRelationFromList(parentID, phraseList):
+    ids = [];
+    deps = [];
+    refs = [];
+    for phrase in phraseList:
+        currHead = getHeads(parentID, phrase)[0]; #Just the first conjunt should suffice
+        ids.append(currHead["ID"]);
+        currDeps = currHead["DEPS"].split("|");
+        deps.append(currDeps);
+        refs.append("/")
+        for dep in currDeps:
+            if re.search(":ref",dep):
+                reObj = re.search(":ref",dep)
+                refs[len(refs)-1] = dep[0:reObj.span(0)[0]];
+    
+    rels = [];
+    for i in np.arange(0,len(refs),1):
+        if refs[i] != "/":
+            j = 0;
+            for head in ids:
+                if refs[i] == str(head):
+                   rels.append((j,i));
+                j = j + 1;
+
+    return(rels);
+
 
 def getNomSem(npHead, phrase, ner = False):
     #Word - subjectHead["FORM"], lemma - lemma, sentence - sentence["phrase"]
@@ -293,7 +330,7 @@ def getNomSem(npHead, phrase, ner = False):
         anim = getNomSem(apposHead, phrase, apposHead["XPOS"] in ["NNP","NNPS"]);        
     return anim;
 
-    
+
 synset_human = wn.synsets('human')[0];
 synset_person = wn.synsets('person')[0];
 synset_animal = wn.synsets('animal')[0];
@@ -458,14 +495,14 @@ def extractNPHeadProperties(heads, prefix = ""):
 
 nomSemExceptions = ["member"]
 
-allSentsR = allSents[14:15] #R stands for reduced and is for testing purposes
+allSentsR = allSents[9:10] #R stands for reduced and is for testing purposes
 
 #TODO: Embedding depth, idiomaticity, 
 
 clauseTableColnames = ["ClauseID","Doc","SentID","SentForm",
                             "VForm","VLemma","VMorph","VMorphForm","VTense",
                             "VAspect","Voice","VSylCo","VFreq","Aux3","Aux2","Aux1",
-                            "PassAux","VClass","OvertSubj",
+                            "PassAux","VClass","OvertSubj","CovertSubj","SubjRef",
                             "SubjHead","SubjFreq","SubjDef","SubjNum",
                             "SubjPers","SubjAnim","SubjSynType",
                             "SubjSylCo","SubjMorph","OvertObj","OvertIObj","ObjFreq",
@@ -478,8 +515,6 @@ clauseTable = pandas.DataFrame(columns=clauseTableColnames);
 
 #Accepting multiple values: SubjHead, SubjFreq, SubjDef, SubjAnim, SubjSynType, SubjMorph
 #Combined: SubjSylCo, SubjNum, SubjPers
-
-
 
 
 #This is the clause ID WITHIN DOCUMENTS.
@@ -522,8 +557,8 @@ for sentence in allSentsR:
                 auxiliaries = getDependents(i+1,"aux",sentence);
                 auxLemmas = [None] * len(auxiliaries)
                 
-                k = len(auxiliaries);
                 #Fill up auxiliaries
+                k = len(auxiliaries);
                 for aux in auxiliaries:
                     auxHead = getHeads(i+1,aux)[0];
                     auxLemmas[k-1] = auxHead["LEMMA"];
@@ -584,20 +619,29 @@ for sentence in allSentsR:
                 
                 #Arguments
                 #Subject first.
-                currSubject = getDependents(i+1,"nsubj",sentence)
-                if len(currSubject) == 0:
-                    currSubject = getDependents(i+1, "nsubj:pass",sentence);
-                    if len(currSubject) != 0:
-                        currentRow["OvertSubj"] = currSubject[0]['phrase'];
-                        currSubject = currSubject[0];
+                currSubjectCands = getDependents(i+1,"nsubj",sentence);
+                currSubjectCands = currSubjectCands + getDependentsFromDeprel(i+1,"nsubj",sentence);
+                currSubjectCands = currSubjectCands + getDependents(i+1, "nsubj:pass",sentence);
+                if re.search("acl",df.iloc[i,]["DEPREL"]):
+                    relations = extractRefRelationFromList(i+1,currSubjectCands)
+                    if  len(relations) == 0:
+                        warnings.warn("ATTENTION: relclause, no relations!");
                     else:
-                        currSubject = "NOSUBJ";
+                        if len(relations) > 1: warnings.warn("ATTENTION: >1 relation!");
+                        relations = relations[0];
+                        currSubject = currSubjectCands[relations[1]];
+                        currCovertSubject = currSubjectCands[relations[0]];                    
+                elif len(currSubjectCands)>0:
+                    currSubject = currSubjectCands[0];
+                    currCovertSubject = None; 
                 else:
-                    currentRow["OvertSubj"] = currSubject[0]["phrase"];
-                    currSubject = currSubject[0];
+                    currSubject = "NOSUBJ";
                 
                 if currSubject != "NOSUBJ":
-                    #Features that don't take heads into account                        
+                    #Features that don't take heads into account
+                    currentRow["OvertSubj"] = currSubject['phrase'];
+                    if currCovertSubject:
+                        currentRow["CovertSubj"] = currCovertSubject['phrase'];                        
                     currentRow["SubjSylCo"] = sylCount(currentRow["OvertSubj"]);
                     
                     #Features that do take head into account
