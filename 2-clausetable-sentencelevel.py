@@ -184,17 +184,38 @@ def getInfoFromFeats(feats):
 #phrase is the phrase containing the head, not the full sentence
 #returns rows not entire tables
 #if only one head expected, use [0]
-def getHeads(parentID, phrase):
+
+def getHeads(parentID, phrase, RC = False):
     i = 0;
     df = phrase['phraseDF'];
     heads = [];
-    while i < df.shape[0]:
-        if re.search("\|"+str(parentID)+":",df.iloc[i,]["DEPS"]) or re.search("^"+str(parentID)+":",df.iloc[i,]["DEPS"]) or (df.iloc[i,]["HEAD"] == str(parentID)):
-            heads.append(df.iloc[i,]);
-        i += 1;
+    if not RC:
+        while i < df.shape[0]:
+            if re.search("\|"+str(parentID)+":",df.iloc[i,]["DEPS"]) or re.search("^"+str(parentID)+":",df.iloc[i,]["DEPS"]) or (df.iloc[i,]["HEAD"] == str(parentID)):
+                heads.append(df.iloc[i,]);
+            i += 1;
+    elif RC:
+        print(str(df["ID"]))
+        while i < df.shape[0]:
+            print(df.iloc[i,]["HEAD"])
+            if int(df.iloc[i,]["HEAD"]) not in df["ID"].tolist():
+                heads.append(df.iloc[i,]);
+            i += 1;
+        if len(heads) > 1: print("RC argument no. of heads exceeds 1! Please check getHeads code.");
     if heads == []: heads == [None]; print("heynohead");
-    #TODO: RELATIVE PRONOUNS!!
     return(heads);
+    
+def combineNPFeatures(fullNPfeatures, coreffeatures, prefix):
+    finalBundle = dict();
+    finalBundle[prefix + "Freq"] = coreffeatures[prefix + "Freq"];
+    finalBundle[prefix + "Def"] = "def";
+    finalBundle[prefix + "Head"] = coreffeatures[prefix + "Head"];
+    finalBundle[prefix + "Morph"] = fullNPfeatures[prefix + "Morph"];
+    finalBundle[prefix + "Pers"] = fullNPfeatures[prefix + "Pers"];
+    finalBundle[prefix + "Anim"] = fullNPfeatures[prefix + "Anim"]
+    finalBundle[prefix + "Num"] = fullNPfeatures[prefix + "Num"];
+    finalBundle[prefix + "SynType"] = coreffeatures[prefix + "SynType"];
+    return(finalBundle)
         
 def doNothing():
     a = 1;
@@ -476,7 +497,7 @@ def extractNPHeadProperties(heads, prefix = ""):
      if len(heads) > 1:
          outputProps[prefix + "Num"] = "Plur";
      else:
-         outputProps[prefix + "Num"] = headPropsSep[0][prop];
+         outputProps[prefix + "Num"] = headPropsSep[0]["Num"];
          
      #SubjPers
      persons = []
@@ -620,20 +641,21 @@ for sentence in allSentsR:
                 #Arguments
                 #Subject first.
                 currSubjectCands = getDependents(i+1,"nsubj",sentence);
-                currSubjectCands = currSubjectCands + getDependentsFromDeprel(i+1,"nsubj",sentence);
                 currSubjectCands = currSubjectCands + getDependents(i+1, "nsubj:pass",sentence);
-                if re.search("acl",df.iloc[i,]["DEPREL"]):
+                currSubjectCands = currSubjectCands + getDependentsFromDeprel(i+1,"nsubj",sentence);
+                
+                currCovertSubject = None; 
+                if re.search("acl",df.iloc[i,]["DEPREL"]): #For relative clauses only
                     relations = extractRefRelationFromList(i+1,currSubjectCands)
                     if  len(relations) == 0:
-                        warnings.warn("ATTENTION: relclause, no relations!");
+                        warnings.warn("ATTENTION: relclause, no ref relations!");
                     else:
-                        if len(relations) > 1: warnings.warn("ATTENTION: >1 relation!");
+                        if len(relations) > 1: warnings.warn("ATTENTION: >1 ref relation!");
                         relations = relations[0];
                         currSubject = currSubjectCands[relations[1]];
                         currCovertSubject = currSubjectCands[relations[0]];                    
                 elif len(currSubjectCands)>0:
                     currSubject = currSubjectCands[0];
-                    currCovertSubject = None; 
                 else:
                     currSubject = "NOSUBJ";
                 
@@ -647,6 +669,15 @@ for sentence in allSentsR:
                     #Features that do take head into account
                     subjectHeads = getHeads(i+1,currSubject);
                     subjHeadProps = extractNPHeadProperties(subjectHeads,"Subj");
+                    if currCovertSubject:
+                        print("gotHere");
+                        covertSubjectHeads = getHeads(i+1,currCovertSubject,RC=True);
+                        print(currCovertSubject);
+                        covertSubjHeadProps = extractNPHeadProperties(covertSubjectHeads,"Subj");
+                        print(covertSubjHeadProps);
+                        print(subjHeadProps);
+                        subjHeadProps = combineNPFeatures(covertSubjHeadProps,subjHeadProps,"Subj")
+                    
                     
                     for prop in subjHeadProps:
                         currentRow[prop] = subjHeadProps[prop];                
