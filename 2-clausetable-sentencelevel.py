@@ -155,7 +155,8 @@ getDependents(7,"obj",allSents[0])
 
 #This guy returns a row rather than a full phrase object
 #At least for now
-def getParents(childID, phrase):
+
+def getParents(childID, phrase, relation = "any"):
     df = phrase['phraseDF'];
     depString = df["DEPS"].iloc[childID-1];
     depString = depString.split("|");
@@ -164,8 +165,9 @@ def getParents(childID, phrase):
     i = 0
     for string in depString:
         string = string.split(":");
-        parents[i] = df.iloc[int(string[0])-1,:];
-        i += 1;
+        if (relation == "any") or (string[1] == relation):
+            parents[i] = df.iloc[int(string[0])-1,:];
+            i += 1;
     
     return parents;
 
@@ -516,7 +518,8 @@ def extractNPHeadProperties(heads, prefix = ""):
 
 nomSemExceptions = ["member"]
 
-allSentsR = allSents[9:10] #R stands for reduced and is for testing purposes
+
+allSentsR = allSents[1:20] #R stands for reduced and is for testing purposes
 
 #TODO: Embedding depth, idiomaticity, 
 
@@ -531,7 +534,9 @@ clauseTableColnames = ["ClauseID","Doc","SentID","SentForm",
                             "ObjSylCo","ObjMorph","ObjSynType","OvertObl1",
                             "Obl2","Obl3","Obl4","Obl5"];
                        
-    
+
+print(getParents(24, allSents[14], "conj"));
+
 clauseTable = pandas.DataFrame(columns=clauseTableColnames);
 
 #Accepting multiple values: SubjHead, SubjFreq, SubjDef, SubjAnim, SubjSynType, SubjMorph
@@ -643,9 +648,12 @@ for sentence in allSentsR:
                 currSubjectCands = getDependents(i+1,"nsubj",sentence);
                 currSubjectCands = currSubjectCands + getDependents(i+1, "nsubj:pass",sentence);
                 currSubjectCands = currSubjectCands + getDependentsFromDeprel(i+1,"nsubj",sentence);
+                currSubjectCands = currSubjectCands + getDependentsFromDeprel(i+1,"nsubj:pass",sentence);
                 
-                currCovertSubject = None; 
-                if re.search("acl",df.iloc[i,]["DEPREL"]): #For relative clauses only
+                currCovertSubject = None;
+                RC = False;
+                RCconj = False;
+                if re.search("acl:relcl",df.iloc[i,]["DEPREL"]): #For relative clauses only
                     relations = extractRefRelationFromList(i+1,currSubjectCands)
                     if  len(relations) == 0:
                         warnings.warn("ATTENTION: relclause, no ref relations!");
@@ -653,7 +661,23 @@ for sentence in allSentsR:
                         if len(relations) > 1: warnings.warn("ATTENTION: >1 ref relation!");
                         relations = relations[0];
                         currSubject = currSubjectCands[relations[1]];
-                        currCovertSubject = currSubjectCands[relations[0]];                    
+                        currCovertSubject = currSubjectCands[relations[0]];
+                        RC = True;
+                elif re.search("acl:relcl",df.iloc[i,]["DEPS"]): #RCs that aren't the first conjunct
+                    primConjunct = getParents(i+1, sentence, "conj")[0];
+                    print("primConjunct",primConjunct)
+                    primConjunctID = primConjunct["ID"];
+                    currSubjectCands = currSubjectCands + getDependentsFromDeprel(primConjunctID, "nsubj",sentence);
+                    currSubjectCands = currSubjectCands + getDependentsFromDeprel(primConjunctID, "nsubj:pass",sentence);
+                    relations = extractRefRelationFromList(primConjunct["ID"],currSubjectCands)
+                    if  len(relations) == 0:
+                        warnings.warn("ATTENTION: relclause, no ref relations!");
+                    else:
+                        if len(relations) > 1: warnings.warn("ATTENTION: >1 ref relation!");
+                        relations = relations[0];
+                        currSubject = currSubjectCands[relations[1]];
+                        currCovertSubject = currSubjectCands[relations[0]]; 
+                        RCconj = True;
                 elif len(currSubjectCands)>0:
                     currSubject = currSubjectCands[0];
                 else:
@@ -667,7 +691,11 @@ for sentence in allSentsR:
                     currentRow["SubjSylCo"] = sylCount(currentRow["OvertSubj"]);
                     
                     #Features that do take head into account
-                    subjectHeads = getHeads(i+1,currSubject);
+                    if RCconj:
+                        subjectHeads = getHeads(primConjunctID,currSubject);
+                    else:
+                        subjectHeads = getHeads(i+1,currSubject);
+                    print(currSubject)
                     subjHeadProps = extractNPHeadProperties(subjectHeads,"Subj");
                     if currCovertSubject:
                         print("gotHere");
@@ -677,7 +705,6 @@ for sentence in allSentsR:
                         print(covertSubjHeadProps);
                         print(subjHeadProps);
                         subjHeadProps = combineNPFeatures(covertSubjHeadProps,subjHeadProps,"Subj")
-                    
                     
                     for prop in subjHeadProps:
                         currentRow[prop] = subjHeadProps[prop];                
@@ -715,7 +742,7 @@ for sentence in allSentsR:
                                             # ,sort=False)
         
 print(clauseTable)
-clauseTable.to_csv(path_or_buf="sept19table.csv")
+clauseTable.to_csv(path_or_buf="sept26table.csv")
 
 
 #NMA! = Needs Manual Attention!
