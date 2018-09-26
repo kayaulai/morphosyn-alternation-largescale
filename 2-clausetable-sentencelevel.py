@@ -212,7 +212,7 @@ def combineNPFeatures(fullNPfeatures, coreffeatures, prefix):
     finalBundle[prefix + "Freq"] = coreffeatures[prefix + "Freq"];
     finalBundle[prefix + "Def"] = "def";
     finalBundle[prefix + "Head"] = coreffeatures[prefix + "Head"];
-    finalBundle[prefix + "Morph"] = fullNPfeatures[prefix + "Morph"];
+    finalBundle[prefix + "Morph"] = coreffeatures[prefix + "Morph"];
     finalBundle[prefix + "Pers"] = fullNPfeatures[prefix + "Pers"];
     finalBundle[prefix + "Anim"] = fullNPfeatures[prefix + "Anim"]
     finalBundle[prefix + "Num"] = fullNPfeatures[prefix + "Num"];
@@ -756,12 +756,21 @@ for sentence in allSentsR:
                     currentRow["ObjSylCo"] = sylCount(currentRow["OvertObj"]);
                     
                     #Features that do take head into account
-                    objectHeads = getHeads(i+1,currObject);
+                    if RCconj:
+                        objectHeads = getHeads(primConjunctID,currObject);
+                    else:
+                        objectHeads = getHeads(i+1,currObject);
                     objHeadProps = extractNPHeadProperties(objectHeads,"Obj");
                     
+                    if currCovertObject:
+                        covertObjectHeads = getHeads(i+1,currCovertObject,RC=True);
+                        covertObjHeadProps = extractNPHeadProperties(covertObjectHeads,"Obj");
+                        objHeadProps = combineNPFeatures(covertObjHeadProps,objHeadProps,"Obj");
+                        
                     for prop in objHeadProps:
-                        currentRow[prop] = objHeadProps[prop];
-                    
+                        currentRow[prop] = objHeadProps[prop];                
+
+                        
             #And now the arguments
             currentClauseID += 1;
             j += 1;
