@@ -382,7 +382,7 @@ nomSemExceptions = ["member"]
 
 
 
-def extractNPHeadProperties(heads, prefix = ""):
+def extractNPHeadProperties(heads, prefix = "", case = False):
      #This is divided into two sub-modules
      #The first part is extracting the features
      #The second part is combining them
@@ -470,6 +470,11 @@ def extractNPHeadProperties(heads, prefix = ""):
             else:
                 currProps["Def"] = "indef";                            
         #Doubt: every and all???
+        
+        #Case
+        if case:
+            currCases = getDependents(head["ID"],"case",sentence);
+            currProps["Case"]  = getHeads(head["ID"],currCases[0])[0]["FORM"];
     
         #Animacy          
         #We will be working with the animacy tags from 
@@ -477,7 +482,7 @@ def extractNPHeadProperties(heads, prefix = ""):
         #human, org, animal, place, time,
         #concrete, nonconc, mac, veh
         currProps["Anim"] = getNomSem(head,sentence,
-                  head["XPOS"] in ["NNP","NNPS"])
+                  head["XPOS"] in ["NNP","NNPS"]);
             
         #Exceptions
         if head["LEMMA"] in nomSemExceptions: 
@@ -488,6 +493,7 @@ def extractNPHeadProperties(heads, prefix = ""):
      #Part II: Combination
      multValProps = ["Head", "Freq", "Def", "Anim",
                         "SynType", "Morph"];
+     if case: multValProps = multValProps + ["Case"];
      for prop in multValProps:
          currString = "";
          for headProps in headPropsSep:
@@ -520,7 +526,7 @@ nomSemExceptions = ["member"]
 
 
 
-allSentsR = allSents[7125:7126] #R stands for reduced and is for testing purposes
+allSentsR = allSents[2:3] #R stands for reduced and is for testing purposes
 
 #TODO: Embedding depth, idiomaticity, 
 
@@ -532,7 +538,9 @@ clauseTableColnames = ["ClauseID","Doc","SentID","SentForm",
                             "SubjPers","SubjAnim","SubjSynType",
                             "SubjSylCo","SubjMorph","OvertObj","OvertIObj","CovertObj","ObjFreq",
                             "ObjHead","ObjDef","ObjNum","ObjPers","ObjAnim",
-                            "ObjSylCo","ObjMorph","ObjSynType","OvertObl1",
+                            "ObjSylCo","ObjMorph","ObjSynType","OvertObl",
+                            "OblCase","OblHead","OblFreq","OblDef","OblNum",
+                            "OblPers","OblAnim","OblSylCo","OblMorph","OblSynType",
                             "Obl2","Obl3","Obl4","Obl5"];
                        
 
@@ -583,6 +591,11 @@ for sentence in allSentsR:
                 currentRow["VMorphForm"] = featsInfo["VerbForm"];
                 auxiliaries = getDependents(i+1,"aux",sentence);
                 auxLemmas = [None] * len(auxiliaries)
+                
+                particles = getDependents(i+1,"compound:prt",sentence);
+                for part in particles:
+                    currentRow["VLemma"] = currentRow["VLemma"] + " " + getHeads(i+1,part)[0]["FORM"];
+                    currentRow["VForm"] = currentRow["VForm"] + " " + getHeads(i+1,part)[0]["FORM"];
                 
                 #Fill up auxiliaries
                 k = len(auxiliaries);
@@ -646,6 +659,8 @@ for sentence in allSentsR:
                 
                 #Arguments
                 #Subject first.
+                currSubject = "NOSUBJ";
+                
                 currSubjectCands = getDependents(i+1,"nsubj",sentence);
                 currSubjectCands = currSubjectCands + getDependents(i+1, "nsubj:pass",sentence);
                 currSubjectCands = currSubjectCands + getDependentsFromDeprel(i+1,"nsubj",sentence);
@@ -705,8 +720,10 @@ for sentence in allSentsR:
                     
                     for prop in subjHeadProps:
                         currentRow[prop] = subjHeadProps[prop];                
-
-                print("objStart");
+                
+                RC = False;
+                RCconj = False;
+                currObject = "NOOBJ";
                 currObjectCands = getDependents(i+1,"iobj",sentence,False);
                 currObjectCands = currObjectCands + getDependentsFromDeprel(i+1,"iobj",sentence);
                 if len(currObjectCands) == 0:
@@ -731,7 +748,6 @@ for sentence in allSentsR:
                         RC = True;
                 elif re.search("acl:relcl",df.iloc[i,]["DEPS"]): #RCs that aren't the first conjunct
                     primConjunct = getParents(i+1, sentence, "conj")[0];
-                    print("primConjunct",primConjunct)
                     primConjunctID = primConjunct["ID"];
                     currObjectCands = currObjectCands + getDependentsFromDeprel(primConjunctID, "nobj",sentence);
                     currObjectCands = currObjectCands + getDependentsFromDeprel(primConjunctID, "nobj:pass",sentence);
@@ -769,6 +785,67 @@ for sentence in allSentsR:
                         
                     for prop in objHeadProps:
                         currentRow[prop] = objHeadProps[prop];                
+                
+                #OBLIQUE!  
+                print("oblStart");
+                currObliqueCands = getDependents(i+1,"obl",sentence,False);
+                currObliqueCands = currObliqueCands + getDependentsFromDeprel(i+1,"obl",sentence);                
+                
+                
+                currOblique = "NOOBL";
+                currCovertOblique = None;
+                
+                if re.search("acl:relcl",df.iloc[i,]["DEPREL"]): #For relative clauses only
+                    relations = extractRefRelationFromList(i+1,currObliqueCands)
+                    if  len(relations) == 0:
+                        if len(currObliqueCands)>0:
+                            currOblique = currObliqueCands[0];
+                    else:
+                        if len(relations) > 1: warnings.warn("ATTENTION: >1 ref relation!");
+                        relations = relations[0];
+                        currOblique = currObliqueCands[relations[1]];
+                        currCovertOblique = currObliqueCands[relations[0]];
+                        RC = True;
+                elif re.search("acl:relcl",df.iloc[i,]["DEPS"]): #RCs that aren't the first conjunct
+                    primConjunct = getParents(i+1, sentence, "conj")[0];
+                    primConjunctID = primConjunct["ID"];
+                    currObliqueCands = currObliqueCands + getDependentsFromDeprel(primConjunctID, "nobl",sentence);
+                    currObliqueCands = currObliqueCands + getDependentsFromDeprel(primConjunctID, "nobl:pass",sentence);
+                    relations = extractRefRelationFromList(primConjunct["ID"],currObliqueCands)
+                    if  len(relations) == 0:
+                        if len(currObliqueCands)>0:
+                            currOblique = currObliqueCands[0];
+                    else:
+                        if len(relations) > 1: warnings.warn("ATTENTION: >1 ref relation!");
+                        relations = relations[0];
+                        currOblique = currObliqueCands[relations[1]];
+                        currCovertOblique = currObliqueCands[relations[0]]; 
+                        RCconj = True;
+                elif len(currObliqueCands)>0:
+                    currOblique = currObliqueCands[0];
+                else:
+                    currOblique = "NOOBL";
+
+                if currOblique != "NOOBL":
+                    #Features that don't take heads into account
+                    currentRow["OvertObl"] = currOblique['phrase'];
+                    currentRow["OblSylCo"] = sylCount(currentRow["OvertObl"]);
+                    
+                    #Features that do take head into account
+                    if RCconj:
+                        obliqueHeads = getHeads(primConjunctID,currOblique);
+                    else:
+                        obliqueHeads = getHeads(i+1,currOblique);
+                    oblHeadProps = extractNPHeadProperties(obliqueHeads,"Obl",case=True);
+                    
+                    if currCovertOblique:
+                        covertObliqueHeads = getHeads(i+1,currCovertOblique,RC=True);
+                        covertOblHeadProps = extractNPHeadProperties(covertObliqueHeads,"Obl");
+                        oblHeadProps = combineNPFeatures(covertOblHeadProps,oblHeadProps,"Obl");
+                        
+                    for prop in oblHeadProps:
+                        currentRow[prop] = oblHeadProps[prop];                
+
 
                         
             #And now the arguments
