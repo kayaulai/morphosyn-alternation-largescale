@@ -34,6 +34,8 @@ s = shelve.open("rawdata.dat");
 allSents = s["allSents"];
 s.close();
 pandas.set_option("max_columns",50)
+from nltk.stem import WordNetLemmatizer
+wnl = WordNetLemmatizer()
 
 #End runthis
 sentence1 = "Mark and John are working in the United States, while Mary found a pig in Europe.";
@@ -95,6 +97,28 @@ def getPhrase(headID, phrase, skip = []):
     
     return newPhrase;
     
+def splitDepString(depString):
+    deps = depString.split("|");
+    result = [];
+    for dep in deps:
+        pair = dep.split(":");
+        result.append((pair[0],pair[1]));    
+    return result;
+
+def searchDepStrings(depStrings, ID = 0, relation = ""):
+    if ID == 0 and relation == "": return("ERROR");
+    elif ID == 0 and relation != "":
+        for item in depStrings:
+            if item[1] == relation: result = item; break;
+    elif ID != 0 and relation == "":
+        for item in depStrings:
+            if item[0] == ID: result = item; break;
+    else:
+        for item in depStrings:
+            if item[1] == relation and item[0] == ID: result = item; break;
+    return(item);
+        
+        
         
 #Test the function
 print(getPhrase(19,allSents[0]));
@@ -197,9 +221,7 @@ def getHeads(parentID, phrase, RC = False):
                 heads.append(df.iloc[i,]);
             i += 1;
     elif RC:
-        print(str(df["ID"]))
         while i < df.shape[0]:
-            print(df.iloc[i,]["HEAD"])
             if int(df.iloc[i,]["HEAD"]) not in df["ID"].tolist():
                 heads.append(df.iloc[i,]);
             i += 1;
@@ -520,20 +542,98 @@ def extractNPHeadProperties(heads, prefix = "", case = False):
          
      return(outputProps)
 
+def extractPredProperties(predID, phrase, prefix):
+    props = dict();
+    df = phrase["phraseDF"];
+    props[prefix + "Form"] = df.iloc[predID,]["FORM"];
+    props[prefix + "Lemma"] = df.iloc[predID,]["LEMMA"];
+    props[prefix + "Morph"] = df.iloc[predID,]["XPOS"];
+    
+    auxiliaries = getDependents(predID+1,"aux",sentence);
+    auxLemmas = [None] * len(auxiliaries)
+    
+    particles = getDependents(predID+1,"compound:prt",sentence);
+    for part in particles:
+        props[prefix + "Lemma"] = props[prefix + "Lemma"] + " " + getHeads(predID+1,part)[0]["FORM"];
+        props[prefix + "Form"] = props[prefix + "Form"] + " " + getHeads(predID+1,part)[0]["FORM"];
+    
+    #Fill up auxiliaries
+    k = len(auxiliaries);
+    for aux in auxiliaries:
+        auxHead = getHeads(predID+1,aux)[0];
+        auxLemmas[k-1] = auxHead["LEMMA"];
+        auxInfo = getInfoFromFeats(auxHead["FEATS"]);
+        props["Aux" + str(k)] = auxHead["FORM"];
+        if k == 1:
+            break;
+        k = k - 1;
+    if "Voice" in featsInfo:
+        props["Voice"] = featsInfo["Voice"];
+        props["PassAux"] = auxLemmas[0]
+    else:
+        props["Voice"] = "Act";
+        
+    #Syllable count. Simple!
+    props[prefix + "SylCo"] = sylCount(df.iloc[predID,]["FORM"]);
+    
+    #Verb freq
+    props[prefix + "Freq"] = word_frequency(props[prefix + "Form"], 'en')
+
+        
+    #More abstract grammatical categories
+    props[prefix + "Tense"] = "/"
+    if getValueFromInfo(featsInfo,"VerbForm") == "Fin":
+        props[prefix + "Tense"] = getValueFromInfo(featsInfo,"Tense");
+    else:
+        for aux in auxiliaries:
+            auxHead = getHeads(predID+1,aux)[0];
+            auxInfo = getInfoFromFeats(auxHead["FEATS"]);
+            if auxInfo["VerbForm"] == "Fin":
+                if "Tense" in auxInfo:
+                    props[prefix + "Tense"] = auxInfo["Tense"];
+                    break;
+                elif auxHead["FORM"] == "will":
+                    props[prefix + "Tense"] = "Fut";
+                    break;
+    if props[prefix + "Tense"] == "/":
+        props[prefix + "Tense"] = "Tenseless";
+        
+    #Determine aspect from the auxiliaries
+    props[prefix + "Aspect"] = "/"
+    try:
+        if (props["Aux1"] == "being") | (props["Aux1"] == "getting"):
+            props[prefix + "Aspect"] = "Prog";
+        elif getValueFromInfo(featsInfo,"VerbForm") == "Part" & getValueFromInfo(featsInfo,"VerbForm") == "Pres":
+            props[prefix + "Aspect"] = "Prog";
+    except:
+        doNothing();
+        
+    for aux in auxLemmas:
+        if aux == "have":
+            if props[prefix + "Aspect"] == "Prog":
+                props[prefix + "Aspect"] = "PerfProg";
+            else:
+                props[prefix + "Aspect"] = "Perf";
+        break;
+    
+    if props[prefix + "Aspect"] == "/":
+        props[prefix + "Aspect"] = "Simple";
+        
+    return(props);
 
 
 nomSemExceptions = ["member"]
 
 
 
-allSentsR = allSents[2:3] #R stands for reduced and is for testing purposes
+allSentsR = allSents[14:15] #R stands for reduced and is for testing purposes
 
 #TODO: Embedding depth, idiomaticity, 
 
-clauseTableColnames = ["ClauseID","Doc","SentID","SentForm",
-                            "VForm","VLemma","VMorph","VMorphForm","VTense",
-                            "VAspect","Voice","VSylCo","VFreq","Aux3","Aux2","Aux1",
-                            "PassAux","VClass","OvertSubj","CovertSubj","SubjRef",
+clauseTableColnames = ["ClauseID","Doc","SentID","SentForm","PredType",
+                            "PredForm","PredLemma","PredMorph","VMorphForm","PredTense",
+                            "PredAspect","Voice","PredSylCo","PredFreq","Aux3","Aux2","Aux1",
+                            "PassAux","OvertSubj","CovertSubj","SubjRef",
                             "SubjHead","SubjFreq","SubjDef","SubjNum",
                             "SubjPers","SubjAnim","SubjSynType",
                             "SubjSylCo","SubjMorph","OvertObj","OvertIObj","CovertObj","ObjFreq",
@@ -541,7 +641,7 @@ clauseTableColnames = ["ClauseID","Doc","SentID","SentForm",
                             "ObjSylCo","ObjMorph","ObjSynType","OvertObl",
                             "OblCase","OblHead","OblFreq","OblDef","OblNum",
                             "OblPers","OblAnim","OblSylCo","OblMorph","OblSynType",
-                            "Obl2","Obl3","Obl4","Obl5"];
+                            "Obl2","Obl3"];
                        
 
 print(getParents(24, allSents[14], "conj"));
@@ -563,10 +663,21 @@ for sentence in allSentsR:
     predTypes = [];
     while i <= df.shape[0]:
         ##(df.iloc[i-1,]["XPOS"])
-        if re.match("V",df.iloc[i-1,]["XPOS"]):
-            if df.iloc[i-1,]["UPOS"] != "AUX":
+        if df.iloc[i-1,]["UPOS"] == "VERB":
+            preds.append(i-1);
+            predTypes.append("V");
+                
+        if df.iloc[i-1,]["UPOS"] == "ADJ":
+            print("ADJ",len(getDependents(i, "aux", sentence)))
+            if len(getDependents(i, "cop", sentence)) > 0:
                 preds.append(i-1);
-                predTypes.append("V");
+                predTypes.append("A");
+            
+        if df.iloc[i-1,]["UPOS"] in ["NOUN", "NUM", "PRON", "PROPN"]:
+            if len(getDependents(i, "cop", sentence)) > 0:
+                preds.append(i-1);
+                predTypes.append("N");
+            
         i += 1;
     j = 0;
     for i in preds:
@@ -582,147 +693,85 @@ for sentence in allSentsR:
             currentRow["SentForm"] = sentence['phrase'];
             #Now for clause-level stuff. First the V/A.
             featsInfo = getInfoFromFeats(df.iloc[i,]["FEATS"])
-            if predTypes[j] == "V":
-                
-                #Verb form stuff.
-                currentRow["VForm"] = df.iloc[i,]["FORM"];
-                currentRow["VLemma"] = df.iloc[i,]["LEMMA"];
-                currentRow["VMorph"] = df.iloc[i,]["XPOS"];
-                currentRow["VMorphForm"] = featsInfo["VerbForm"];
-                auxiliaries = getDependents(i+1,"aux",sentence);
-                auxLemmas = [None] * len(auxiliaries)
-                
-                particles = getDependents(i+1,"compound:prt",sentence);
-                for part in particles:
-                    currentRow["VLemma"] = currentRow["VLemma"] + " " + getHeads(i+1,part)[0]["FORM"];
-                    currentRow["VForm"] = currentRow["VForm"] + " " + getHeads(i+1,part)[0]["FORM"];
-                
-                #Fill up auxiliaries
-                k = len(auxiliaries);
-                for aux in auxiliaries:
-                    auxHead = getHeads(i+1,aux)[0];
-                    auxLemmas[k-1] = auxHead["LEMMA"];
-                    auxInfo = getInfoFromFeats(auxHead["FEATS"]);
-                    currentRow["Aux" + str(k)] = auxHead["FORM"];
-                    if k == 1:
-                        break;
-                    k = k - 1;
-                if "Voice" in featsInfo:
-                    currentRow["Voice"] = featsInfo["Voice"];
-                    currentRow["PassAux"] = auxLemmas[0]
-                else:
-                    currentRow["Voice"] = "Act";
-                    
-                #Syllable count. Simple!
-                currentRow["VSylCo"] = sylCount(df.iloc[i,]["FORM"]);
-                
-                #Verb freq
-                currentRow["VFreq"] = word_frequency(currentRow["VForm"], 'en')
+            
+            currentRow["PredType"] = predTypes[j];
+            predProps = extractPredProperties(i,sentence,"Pred")
+            for prop in predProps:
+                currentRow[prop] = predProps[prop];                
 
-                    
-                #More abstract grammatical categories
-                if featsInfo["VerbForm"] == "Fin":
-                    currentRow["VTense"] = getValueFromInfo(featsInfo,"Tense");
+            if predTypes[j] == "V":        
+                currentRow["VMorphForm"] = featsInfo["VerbForm"];
+                
+            #Arguments
+            #Subject first.
+            currSubject = "NOSUBJ";
+            
+            currSubjectCands = getDependents(i+1,"nsubj",sentence);
+            currSubjectCands = currSubjectCands + getDependents(i+1, "nsubj:pass",sentence);
+            currSubjectCands = currSubjectCands + getDependentsFromDeprel(i+1,"nsubj",sentence);
+            currSubjectCands = currSubjectCands + getDependentsFromDeprel(i+1,"nsubj:pass",sentence);
+            
+            currCovertSubject = None;
+            RC = False;
+            RCconj = False;
+            if re.search("acl:relcl",df.iloc[i,]["DEPREL"]): #For relative clauses only
+                relations = extractRefRelationFromList(i+1,currSubjectCands)
+                if  len(relations) == 0:
+                    if len(currSubjectCands)>0:
+                        currSubject = currSubjectCands[0];
                 else:
-                    for aux in auxiliaries:
-                        auxHead = getHeads(i+1,aux)[0];
-                        auxInfo = getInfoFromFeats(auxHead["FEATS"]);
-                        if auxInfo["VerbForm"] == "Fin":
-                            if "Tense" in auxInfo:
-                                currentRow["VTense"] = auxInfo["Tense"];
-                                break;
-                            elif auxHead["FORM"] == "will":
-                                currentRow["VTense"] = "Fut";
-                                break;
-                if currentRow["VTense"] == "/":
-                    currentRow["VTense"] = "Tenseless";
-                    
-                #Determine aspect from the auxiliaries
-                try:
-                    if (currentRow["Aux1"] == "being") | (currentRow["Aux1"] == "getting"):
-                        currentRow["VAspect"] = "Prog";
-                    elif featsInfo["VerbForm"] == "Part" & featsInfo["Tense"] == "Pres":
-                        currentRow["VAspect"] = "Prog";
-                except:
-                    doNothing();
-                    
-                for aux in auxLemmas:
-                    if aux == "have":
-                        if currentRow["VAspect"] == "Prog":
-                            currentRow["VAspect"] = "PerfProg";
-                        else:
-                            currentRow["VAspect"] = "Perf";
-                    break;
-                
-                if currentRow["VAspect"] == "/":
-                    currentRow["VAspect"] = "Simple";
-                
-                #Arguments
-                #Subject first.
+                    if len(relations) > 1: warnings.warn("ATTENTION: >1 ref relation!");
+                    relations = relations[0];
+                    currSubject = currSubjectCands[relations[1]];
+                    currCovertSubject = currSubjectCands[relations[0]];
+                    RC = True;
+            elif re.search("acl:relcl",df.iloc[i,]["DEPS"]): #RCs that aren't the first conjunct
+                primConjunct = getParents(i+1, sentence, "conj")[0];
+                primConjunctID = primConjunct["ID"];
+                currSubjectCands = currSubjectCands + getDependentsFromDeprel(primConjunctID, "nsubj",sentence);
+                currSubjectCands = currSubjectCands + getDependentsFromDeprel(primConjunctID, "nsubj:pass",sentence);
+                relations = extractRefRelationFromList(primConjunct["ID"],currSubjectCands)
+                if  len(relations) == 0:
+                    if len(currSubjectCands)>0:
+                        currSubject = currSubjectCands[0];
+                else:
+                    if len(relations) > 1: warnings.warn("ATTENTION: >1 ref relation!");
+                    relations = relations[0];
+                    currSubject = currSubjectCands[relations[1]];
+                    currCovertSubject = currSubjectCands[relations[0]]; 
+                    RCconj = True;
+            elif len(currSubjectCands)>0:
+                currSubject = currSubjectCands[0];
+            else:
                 currSubject = "NOSUBJ";
+            
+            if currSubject != "NOSUBJ":
+                #Features that don't take heads into account
+                currentRow["OvertSubj"] = currSubject['phrase'];
+                if currCovertSubject:
+                    currentRow["CovertSubj"] = currCovertSubject['phrase'];                        
+                currentRow["SubjSylCo"] = sylCount(currentRow["OvertSubj"]);
                 
-                currSubjectCands = getDependents(i+1,"nsubj",sentence);
-                currSubjectCands = currSubjectCands + getDependents(i+1, "nsubj:pass",sentence);
-                currSubjectCands = currSubjectCands + getDependentsFromDeprel(i+1,"nsubj",sentence);
-                currSubjectCands = currSubjectCands + getDependentsFromDeprel(i+1,"nsubj:pass",sentence);
-                
-                currCovertSubject = None;
-                RC = False;
-                RCconj = False;
-                if re.search("acl:relcl",df.iloc[i,]["DEPREL"]): #For relative clauses only
-                    relations = extractRefRelationFromList(i+1,currSubjectCands)
-                    if  len(relations) == 0:
-                        if len(currSubjectCands)>0:
-                            currSubject = currSubjectCands[0];
-                    else:
-                        if len(relations) > 1: warnings.warn("ATTENTION: >1 ref relation!");
-                        relations = relations[0];
-                        currSubject = currSubjectCands[relations[1]];
-                        currCovertSubject = currSubjectCands[relations[0]];
-                        RC = True;
-                elif re.search("acl:relcl",df.iloc[i,]["DEPS"]): #RCs that aren't the first conjunct
-                    primConjunct = getParents(i+1, sentence, "conj")[0];
-                    primConjunctID = primConjunct["ID"];
-                    currSubjectCands = currSubjectCands + getDependentsFromDeprel(primConjunctID, "nsubj",sentence);
-                    currSubjectCands = currSubjectCands + getDependentsFromDeprel(primConjunctID, "nsubj:pass",sentence);
-                    relations = extractRefRelationFromList(primConjunct["ID"],currSubjectCands)
-                    if  len(relations) == 0:
-                        if len(currSubjectCands)>0:
-                            currSubject = currSubjectCands[0];
-                    else:
-                        if len(relations) > 1: warnings.warn("ATTENTION: >1 ref relation!");
-                        relations = relations[0];
-                        currSubject = currSubjectCands[relations[1]];
-                        currCovertSubject = currSubjectCands[relations[0]]; 
-                        RCconj = True;
-                elif len(currSubjectCands)>0:
-                    currSubject = currSubjectCands[0];
+                #Features that do take head into account
+                if RCconj:
+                    subjectHeads = getHeads(primConjunctID,currSubject);
                 else:
-                    currSubject = "NOSUBJ";
+                    subjectHeads = getHeads(i+1,currSubject);
+                subjHeadProps = extractNPHeadProperties(subjectHeads,"Subj");
+                if currCovertSubject:
+                    covertSubjectHeads = getHeads(i+1,currCovertSubject,RC=True);
+                    covertSubjHeadProps = extractNPHeadProperties(covertSubjectHeads,"Subj");
+                    subjHeadProps = combineNPFeatures(covertSubjHeadProps,subjHeadProps,"Subj")
                 
-                if currSubject != "NOSUBJ":
-                    #Features that don't take heads into account
-                    currentRow["OvertSubj"] = currSubject['phrase'];
-                    if currCovertSubject:
-                        currentRow["CovertSubj"] = currCovertSubject['phrase'];                        
-                    currentRow["SubjSylCo"] = sylCount(currentRow["OvertSubj"]);
-                    
-                    #Features that do take head into account
-                    if RCconj:
-                        subjectHeads = getHeads(primConjunctID,currSubject);
-                    else:
-                        subjectHeads = getHeads(i+1,currSubject);
-                    subjHeadProps = extractNPHeadProperties(subjectHeads,"Subj");
-                    if currCovertSubject:
-                        covertSubjectHeads = getHeads(i+1,currCovertSubject,RC=True);
-                        covertSubjHeadProps = extractNPHeadProperties(covertSubjectHeads,"Subj");
-                        subjHeadProps = combineNPFeatures(covertSubjHeadProps,subjHeadProps,"Subj")
-                    
-                    for prop in subjHeadProps:
-                        currentRow[prop] = subjHeadProps[prop];                
-                
+                for prop in subjHeadProps:
+                    currentRow[prop] = subjHeadProps[prop];                
+            
+            if predTypes[j] == "V":
+                #Objects and obliques are for verbs only.
                 RC = False;
                 RCconj = False;
+                currCovertObject = None;
+                
                 currObject = "NOOBJ";
                 currObjectCands = getDependents(i+1,"iobj",sentence,False);
                 currObjectCands = currObjectCands + getDependentsFromDeprel(i+1,"iobj",sentence);
@@ -732,40 +781,47 @@ for sentence in allSentsR:
                     currentRow["OvertIObj"] = 0;
                 else:
                     currentRow["OvertIObj"] = 1;
-                    
-                print(currObjectCands)
+             
+                if re.search("acl:relcl",df.iloc[i,]["DEPS"]): #For relative clauses only
+                    deps = splitDepString(df.iloc[i,]["DEPS"]);
+                    headnounID = searchDepStrings(deps, relation = "acl:relcl")[0];
+                    headnounDeprels = splitDepString(df.iloc[int(headnounID)-1,]["DEPREL"]);
+                    headnounDeprelsRelation = searchDepStrings(headnounDeprels, ID = i+1)[1];
+                    if headnounDeprelsRelation in ["obj", "iobj"]: #Only object relative clauses, not subject ou quelque chose du genre
+                        if re.search("acl:relcl",df.iloc[i,]["DEPREL"]):
+                            relations = extractRefRelationFromList(i+1,currObjectCands)
+                            if  len(relations) == 0:
+                                if len(currObjectCands)>0:
+                                    currObject = currObjectCands[0];
+                            else:
+                                if len(relations) > 1: warnings.warn("ATTENTION: >1 ref relation!");
+                                relations = relations[0];
+                                currObject = currObjectCands[relations[1]];
+                                currCovertObject = currObjectCands[relations[0]];
+                                RC = True;
+                        else: #RCs that aren't the first conjunct
+                            primConjunct = getParents(i+1, sentence, "conj")[0];
+                            primConjunctID = primConjunct["ID"];
+                            currObjectCands = currObjectCands + getDependentsFromDeprel(primConjunctID, "nobj",sentence);
+                            currObjectCands = currObjectCands + getDependentsFromDeprel(primConjunctID, "nobj:pass",sentence);
+                            print("ATTENTION",primConjunct["ID"],currObjectCands);
+                            relations = extractRefRelationFromList(primConjunct["ID"],currObjectCands);
+                            if  len(relations) == 0:
+                                if len(currObjectCands)>0:
+                                    currObject = currObjectCands[0];
+                            else:
+                                if len(relations) > 1: warnings.warn("ATTENTION: >1 ref relation!");
+                                relations = relations[0];
+                                currObject = currObjectCands[relations[1]];
+                                currCovertObject = currObjectCands[relations[0]]; 
+                                RCconj = True;
                 
-                if re.search("acl:relcl",df.iloc[i,]["DEPREL"]): #For relative clauses only
-                    relations = extractRefRelationFromList(i+1,currObjectCands)
-                    if  len(relations) == 0:
-                        if len(currObjectCands)>0:
-                            currObject = currObjectCands[0];
-                    else:
-                        if len(relations) > 1: warnings.warn("ATTENTION: >1 ref relation!");
-                        relations = relations[0];
-                        currObject = currObjectCands[relations[1]];
-                        currCovertObject = currObjectCands[relations[0]];
-                        RC = True;
-                elif re.search("acl:relcl",df.iloc[i,]["DEPS"]): #RCs that aren't the first conjunct
-                    primConjunct = getParents(i+1, sentence, "conj")[0];
-                    primConjunctID = primConjunct["ID"];
-                    currObjectCands = currObjectCands + getDependentsFromDeprel(primConjunctID, "nobj",sentence);
-                    currObjectCands = currObjectCands + getDependentsFromDeprel(primConjunctID, "nobj:pass",sentence);
-                    relations = extractRefRelationFromList(primConjunct["ID"],currObjectCands)
-                    if  len(relations) == 0:
-                        if len(currObjectCands)>0:
-                            currObject = currObjectCands[0];
-                    else:
-                        if len(relations) > 1: warnings.warn("ATTENTION: >1 ref relation!");
-                        relations = relations[0];
-                        currObject = currObjectCands[relations[1]];
-                        currCovertObject = currObjectCands[relations[0]]; 
-                        RCconj = True;
-                elif len(currObjectCands)>0:
+                if len(currObjectCands)>0:
                     currObject = currObjectCands[0];
-                else:
-                    currObject = "NOOBJ";
-
+                    
+                print("Larger?",len(currObjectCands))
+                print("currObjectC!!",currObjectCands)
+                print(currObject)
                 if currObject != "NOOBJ":
                     #Features that don't take heads into account
                     currentRow["OvertObj"] = currObject['phrase'];
@@ -787,7 +843,6 @@ for sentence in allSentsR:
                         currentRow[prop] = objHeadProps[prop];                
                 
                 #OBLIQUE!  
-                print("oblStart");
                 currObliqueCands = getDependents(i+1,"obl",sentence,False);
                 currObliqueCands = currObliqueCands + getDependentsFromDeprel(i+1,"obl",sentence);                
                 
@@ -846,8 +901,24 @@ for sentence in allSentsR:
                     for prop in oblHeadProps:
                         currentRow[prop] = oblHeadProps[prop];                
 
-
-                        
+            """
+            if predTypes[j] == "N":
+                #Consider nominal predicates as 'objects' for convenience
+                
+                #Features that don't take heads into account
+                currentRow["OvertObj"] = currObject['phrase'];
+                currentRow["ObjSylCo"] = sylCount(currentRow["OvertObj"]);
+                    
+                #Features that do take head into account
+                if RCconj:
+                    objectHeads = getHeads(primConjunctID,currObject);
+                #else:
+                    objectHeads = getHeads(i+1,currObject);
+                objHeadProps = extractNPHeadProperties(objectHeads,"Obj");
+                    
+                for prop in objHeadProps:
+                    currentRow[prop] = objHeadProps[prop];                
+"""
             #And now the arguments
             currentClauseID += 1;
             j += 1;
@@ -855,7 +926,7 @@ for sentence in allSentsR:
                                             # ,sort=False)
         
 print(clauseTable)
-clauseTable.to_csv(path_or_buf="sept26table.csv")
+clauseTable.to_csv(path_or_buf="oct5table.csv")
 
 
 #NMA! = Needs Manual Attention!
