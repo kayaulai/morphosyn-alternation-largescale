@@ -34,8 +34,6 @@ s = shelve.open("rawdata.dat");
 allSents = s["allSents"];
 s.close();
 pandas.set_option("max_columns",50)
-from nltk.stem import WordNetLemmatizer
-wnl = WordNetLemmatizer()
 
 #End runthis
 sentence1 = "Mark and John are working in the United States, while Mary found a pig in Europe.";
@@ -142,7 +140,7 @@ def getDependent(headID, relation, phrase):
             
     return newPhrase;
 
-def getDependents(headID, relation, phrase, depOnly = True):
+def getDependents(headID, relation, phrase, depOnly = True, conjs = False):
     df = phrase['phraseDF'];
     dep = str(headID) + ":" + relation;
     i = 1;
@@ -159,8 +157,41 @@ def getDependents(headID, relation, phrase, depOnly = True):
         if matchFound:
             newPhrases.append(getPhrase(i, phrase));
         i += 1;
-            
-    return newPhrases;
+    
+    if conjs:
+        mainConjID = getMainConjID(headID, phrase);
+        if mainConjID != "/":
+            dep = str(mainConjID) + ":" + relation;
+            i = 1;
+            while i <= df.shape[0]:
+                searchString = df["DEPS"].iloc[i-1];
+                searchString = searchString.split("|");
+                matchFound = False;
+                for pair in searchString:
+                    if re.match(dep,pair):
+                        matchFound = True;
+                if not depOnly:
+                    if (str(headID) == df["HEAD"].iloc[i-1]) & (relation == df["DEPREL"].iloc[i-1]): matchFound = True;
+                if matchFound:
+                    newPhrases.append(getPhrase(i, phrase));
+                i += 1;
+        return [newPhrases, mainConjID]
+    else:
+        return newPhrases;
+    
+
+
+def getMainConjID(headID, phrase):
+    df = phrase["phraseDF"];
+    headWord = df[df["ID"]==headID];
+    depStringSplit = splitDepString(headWord["DEPS"][0]);
+    mainConjID = "/";
+    for item in depStringSplit:
+        if item[1] == "conj":
+            mainConjID = int(item[0]);
+            break;
+    return(mainConjID);
+    
 
 def getDependentsFromDeprel(headID, relation, phrase):
     df = phrase['phraseDF'];
@@ -226,7 +257,11 @@ def getHeads(parentID, phrase, RC = False):
                 heads.append(df.iloc[i,]);
             i += 1;
         if len(heads) > 1: print("RC argument no. of heads exceeds 1! Please check getHeads code.");
-    if heads == []: heads == [None]; print("heynohead");
+    if heads == []:
+        heads == [None];
+        print("heynohead");
+        #Try to find the head anyway
+        
     return(heads);
     
 def combineNPFeatures(fullNPfeatures, coreffeatures, prefix):
@@ -296,7 +331,7 @@ def extractRefRelationFromList(parentID, phraseList):
     deps = [];
     refs = [];
     for phrase in phraseList:
-        currHead = getHeads(parentID, phrase)[0]; #Just the first conjunt should suffice
+        currHead = getHeads(parentID, phrase, RC = True)[0]; #Just the first conjunt should suffice
         ids.append(currHead["ID"]);
         currDeps = currHead["DEPS"].split("|");
         deps.append(currDeps);
@@ -429,6 +464,10 @@ def extractNPHeadProperties(heads, prefix = "", case = False):
         #Head
         currProps["Head"] = head["FORM"];
         
+        #pos
+        currProps["PosID"] = head["ID"];
+        
+        
         #POS
         currProps["XPOS"] = "/";
         if head["XPOS"] in ["NN","NNS"]:
@@ -495,8 +534,14 @@ def extractNPHeadProperties(heads, prefix = "", case = False):
         
         #Case
         if case:
-            currCases = getDependents(head["ID"],"case",sentence);
-            currProps["Case"]  = getHeads(head["ID"],currCases[0])[0]["FORM"];
+            currCases = getDependents(head["ID"],"case",sentence,conjs=True); #We need to deal with e.g. by John and Mary
+            if len(currCases[0]) == 1 and currCases[1] != "/":
+                currProps["Case"]  = getHeads(currCases[1],currCases[0][0])[0]["FORM"];
+            elif len(currCases[0]) > 0:
+                currProps["Case"]  = getHeads(head["ID"],currCases[0][0])[0]["FORM"];
+            else:
+                currProps["Case"] = "/";
+                
     
         #Animacy          
         #We will be working with the animacy tags from 
@@ -514,7 +559,7 @@ def extractNPHeadProperties(heads, prefix = "", case = False):
     
      #Part II: Combination
      multValProps = ["Head", "Freq", "Def", "Anim",
-                        "SynType", "Morph"];
+                        "SynType", "Morph","PosID"];
      if case: multValProps = multValProps + ["Case"];
      for prop in multValProps:
          currString = "";
@@ -539,6 +584,8 @@ def extractNPHeadProperties(heads, prefix = "", case = False):
          outputProps[prefix + "Pers"] = "2";
      else:
          outputProps[prefix + "Pers"] = "3";
+         
+    
          
      return(outputProps)
 
@@ -626,7 +673,7 @@ nomSemExceptions = ["member"]
 
 
 
-allSentsR = allSents[14:15] #R stands for reduced and is for testing purposes
+allSentsR = allSents[200:] #R stands for reduced and is for testing purposes
 
 #TODO: Embedding depth, idiomaticity, 
 
@@ -636,11 +683,11 @@ clauseTableColnames = ["ClauseID","Doc","SentID","SentForm","PredType",
                             "PassAux","OvertSubj","CovertSubj","SubjRef",
                             "SubjHead","SubjFreq","SubjDef","SubjNum",
                             "SubjPers","SubjAnim","SubjSynType",
-                            "SubjSylCo","SubjMorph","OvertObj","OvertIObj","CovertObj","ObjFreq",
+                            "SubjSylCo","SubjMorph","SubjPosID","OvertObj","OvertIObj","CovertObj","ObjFreq",
                             "ObjHead","ObjDef","ObjNum","ObjPers","ObjAnim",
-                            "ObjSylCo","ObjMorph","ObjSynType","OvertObl",
+                            "ObjSylCo","ObjMorph","ObjSynType","ObjPosID","OvertObl",
                             "OblCase","OblHead","OblFreq","OblDef","OblNum",
-                            "OblPers","OblAnim","OblSylCo","OblMorph","OblSynType",
+                            "OblPers","OblAnim","OblSylCo","OblMorph","OblSynType","OblPosID",
                             "Obl2","Obl3"];
                        
 
@@ -655,8 +702,9 @@ clauseTable = pandas.DataFrame(columns=clauseTableColnames);
 #This is the clause ID WITHIN DOCUMENTS.
 #We'll add an overall ID at the end. No need to sweat it.
 currentClauseID = 1;
+currSentID = 0;
 for sentence in allSentsR:
-    print("Doing sentence: ",sentence['sentID'])
+    print("Doing sentence: ",currSentID);
     i = 1;
     df = sentence['phraseDF'];
     preds = [];
@@ -668,7 +716,7 @@ for sentence in allSentsR:
             predTypes.append("V");
                 
         if df.iloc[i-1,]["UPOS"] == "ADJ":
-            print("ADJ",len(getDependents(i, "aux", sentence)))
+            #print("ADJ",len(getDependents(i, "aux", sentence)))
             if len(getDependents(i, "cop", sentence)) > 0:
                 preds.append(i-1);
                 predTypes.append("A");
@@ -785,7 +833,7 @@ for sentence in allSentsR:
                 if re.search("acl:relcl",df.iloc[i,]["DEPS"]): #For relative clauses only
                     deps = splitDepString(df.iloc[i,]["DEPS"]);
                     headnounID = searchDepStrings(deps, relation = "acl:relcl")[0];
-                    headnounDeprels = splitDepString(df.iloc[int(headnounID)-1,]["DEPREL"]);
+                    headnounDeprels = splitDepString(df.iloc[int(headnounID)-1,]["DEPS"]); #Potential bugs here
                     headnounDeprelsRelation = searchDepStrings(headnounDeprels, ID = i+1)[1];
                     if headnounDeprelsRelation in ["obj", "iobj"]: #Only object relative clauses, not subject ou quelque chose du genre
                         if re.search("acl:relcl",df.iloc[i,]["DEPREL"]):
@@ -819,9 +867,9 @@ for sentence in allSentsR:
                 if len(currObjectCands)>0:
                     currObject = currObjectCands[0];
                     
-                print("Larger?",len(currObjectCands))
-                print("currObjectC!!",currObjectCands)
-                print(currObject)
+                #print("Larger?",len(currObjectCands))
+                #print("currObjectC!!",currObjectCands)
+                #print(currObject)
                 if currObject != "NOOBJ":
                     #Features that don't take heads into account
                     currentRow["OvertObj"] = currObject['phrase'];
@@ -924,6 +972,9 @@ for sentence in allSentsR:
             j += 1;
             clauseTable = clauseTable.append(currentRow,ignore_index=True)
                                             # ,sort=False)
+            print("CURRENTCLAUSEID::::::::::::::::::",currentClauseID)
+    currSentID += 1;
+            
         
 print(clauseTable)
 clauseTable.to_csv(path_or_buf="oct5table.csv")
