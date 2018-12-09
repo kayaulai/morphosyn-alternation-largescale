@@ -251,12 +251,16 @@ def getHeads(parentID, phrase, RC = False):
             if re.search("\|"+str(parentID)+":",df.iloc[i,]["DEPS"]) or re.search("^"+str(parentID)+":",df.iloc[i,]["DEPS"]) or (df.iloc[i,]["HEAD"] == str(parentID)):
                 heads.append(df.iloc[i,]);
             i += 1;
-    elif RC:
+    
+    i = 0;
+    if RC or heads == []:
+        print(df["ID"].tolist())
         while i < df.shape[0]:
             if int(df.iloc[i,]["HEAD"]) not in df["ID"].tolist():
+                print(int(df.iloc[i,]["HEAD"]))
                 heads.append(df.iloc[i,]);
             i += 1;
-        if len(heads) > 1: print("RC argument no. of heads exceeds 1! Please check getHeads code.");
+        if len(heads) > 1: print("RC argument no. of heads possibly exceeds 1! Please check getHeads code.");
     if heads == []:
         heads == [None];
         print("heynohead");
@@ -538,6 +542,7 @@ def extractNPHeadProperties(heads, prefix = "", case = False):
             if len(currCases[0]) == 1 and currCases[1] != "/":
                 currProps["Case"]  = getHeads(currCases[1],currCases[0][0])[0]["FORM"];
             elif len(currCases[0]) > 0:
+                print(head["ID"])
                 currProps["Case"]  = getHeads(head["ID"],currCases[0][0])[0]["FORM"];
             else:
                 currProps["Case"] = "/";
@@ -597,7 +602,7 @@ def extractPredProperties(predID, phrase, prefix):
     props[prefix + "Morph"] = df.iloc[predID,]["XPOS"];
     
     auxiliaries = getDependents(predID+1,"aux",sentence);
-    auxLemmas = [None] * len(auxiliaries)
+    auxLemmas = [None] * len(auxiliaries);
     
     particles = getDependents(predID+1,"compound:prt",sentence);
     for part in particles:
@@ -630,21 +635,27 @@ def extractPredProperties(predID, phrase, prefix):
     #More abstract grammatical categories
     props[prefix + "Tense"] = "/"
     if getValueFromInfo(featsInfo,"VerbForm") == "Fin":
+        print("hello");
         props[prefix + "Tense"] = getValueFromInfo(featsInfo,"Tense");
     else:
+        print("hello");
         for aux in auxiliaries:
             auxHead = getHeads(predID+1,aux)[0];
             auxInfo = getInfoFromFeats(auxHead["FEATS"]);
-            if auxInfo["VerbForm"] == "Fin":
-                if "Tense" in auxInfo:
-                    props[prefix + "Tense"] = auxInfo["Tense"];
-                    break;
-                elif auxHead["FORM"] == "will":
-                    props[prefix + "Tense"] = "Fut";
-                    break;
+            if "VerbForm" in auxInfo:
+                if auxInfo["VerbForm"] == "Fin":
+                    print("hello2");
+                    if "Tense" in auxInfo:
+                        props[prefix + "Tense"] = auxInfo["Tense"];
+                        break;
+                    elif auxHead["FORM"] == "will":
+                        props[prefix + "Tense"] = "Fut";
+                        break;
+            elif auxHead["FORM"] == "better":
+                props[prefix + "Tense"] = "Past"; 
     if props[prefix + "Tense"] == "/":
         props[prefix + "Tense"] = "Tenseless";
-        
+    print("hello3")
     #Determine aspect from the auxiliaries
     props[prefix + "Aspect"] = "/"
     try:
@@ -673,7 +684,9 @@ nomSemExceptions = ["member"]
 
 
 
-allSentsR = allSents[200:] #R stands for reduced and is for testing purposes
+#allSentsR = allSents[(860+579+7940+307+229+12+3929):] #R stands for reduced and is for testing purposes
+
+allSentsR = allSents
 
 #TODO: Embedding depth, idiomaticity, 
 
@@ -709,6 +722,23 @@ for sentence in allSentsR:
     df = sentence['phraseDF'];
     preds = [];
     predTypes = [];
+    
+    
+    #'Manual' changes to what I believe are errors in the original annotations
+    if sentence['doc'] == "weblog-blogspot.com_dakbangla_20050311135387_ENG_20050311_135387" and sentence['sentID'] == 89:
+        sentence['phraseDF'].iloc[2,8] = '17:nsubj';
+    elif sentence['doc'] == "answers-20111108110012AAK8Azy_ans" and sentence['sentID'] == 31:
+        sentence['phraseDF'].iloc[9,3] = 'NOUN';
+    elif sentence['doc'] == "answers-20111108110012AAK8Azy_ans" and sentence['sentID'] == 32:
+        sentence['phraseDF'].iloc[13,3] = 'NOUN';
+    elif sentence['doc'] == "reviews-348247" and sentence['sentID'] == 6:
+        sentence['phraseDF'].iloc[10,3] = 'NOUN';
+    elif sentence['doc'] == "reviews-159485" and sentence['sentID'] == 0:
+        sentence['phraseDF'].iloc[39,3] = 'NOUN';
+    elif sentence['doc'] == "answers-20111108084036AAh8Ws9_ans" and sentence['sentID'] == 0:
+        sentence['phraseDF'].iloc[2,3] = 'NOUN';
+    
+    
     while i <= df.shape[0]:
         ##(df.iloc[i-1,]["XPOS"])
         if df.iloc[i-1,]["UPOS"] == "VERB":
