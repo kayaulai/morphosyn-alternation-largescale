@@ -44,7 +44,7 @@ s.close();
 pd.set_option("max_columns",50)
 from nltk.stem import WordNetLemmatizer
 wnl = WordNetLemmatizer()
-clauseTable = pd.read_csv("G:\\我的雲端硬碟\\corpus priming\\eng\\oct5table.csv");
+clauseTable = pd.read_csv("G:\\我的雲端硬碟\\corpus priming\\eng\\dec17table.csv", engine='python');
 
 import spacy;
 nlp = spacy.load('en_core_web_sm')
@@ -52,6 +52,10 @@ nlp = spacy.load('en_core_web_sm')
 s2 = shelve.open("G:\\我的雲端硬碟\\corpus priming\\eng\\mentions.dat");
 mentionsList = s2["mentionsList"];
 s2.close();
+
+def splitConjString(string):
+    components = string.split(";;");
+    return(components);
 
 def addChain(orig, new):
     if orig != "/":
@@ -100,17 +104,20 @@ while i + j < len(allSents[0:40]):
                   if (currClauses.iloc[i,]["SentID"]+1)==item['sentNum']:
                       print(item);
                       if currClauses.iloc[i,]["SubjPosID"] != "/":
-                          if item['headIndex'] == int(currClauses.iloc[i,]["SubjPosID"]):
+                          subjIDs = [int(i) for i in splitConjString(currClauses.iloc[i,]["SubjPosID"])];
+                          if item['headIndex'] in subjIDs:
                               currClauses["SubjChain"][i] = addChain(currClauses["SubjChain"][i],chainID);
                               print(currClauses["SubjChain"][i])
                               print(addChain(currClauses["SubjChain"][i],chainID))
                          
                       if currClauses.iloc[i,]["ObjPosID"] != "/":
-                          if item['headIndex'] == int(currClauses.iloc[i,]["ObjPosID"]):
+                          objIDs = [int(i) for i in splitConjString(currClauses.iloc[i,]["ObjPosID"])];
+                          if item['headIndex'] in objIDs:
                               currClauses["ObjChain"][i] = addChain(currClauses["ObjChain"][i],chainID);
                           
                       if currClauses.iloc[i,]["OblPosID"] != "/":
-                          if item['headIndex'] == int(currClauses.iloc[i,]["OblPosID"]):
+                          oblIDs = [int(i) for i in splitConjString(currClauses.iloc[i,]["OblPosID"])];
+                          if item['headIndex'] in oblIDs:
                               currClauses["OblChain"][i] = addChain(currClauses["OblChain"][i],chainID);
         
         m = m + 1;
@@ -139,3 +146,4 @@ for clause in clauseTable.iterrows():
     prevClausesTable = prevClausesTable.append(currRow,ignore_index=True)
     
 clauseTable = pd.concat([clauseTable,prevClausesTable], axis=1)
+clauseTable.to_csv(path_or_buf="dec22-table-withintersentence.csv")
