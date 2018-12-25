@@ -204,6 +204,16 @@ def getDependentsFromDeprel(headID, relation, phrase):
             
     return newPhrases;
 
+def getDependentIDsFromDeprel(headID, relation, phrase):
+    df = phrase['phraseDF'];
+    i = 1;
+    ids = [];
+    while i <= df.shape[0]:
+        if (df["HEAD"].iloc[i-1] == str(headID)) & (df["DEPREL"].iloc[i-1] == relation):
+            ids.append(i);
+        i += 1;
+            
+    return ids;
 
 #Test the function
 getDependents(7,"obj",allSents[0])
@@ -685,11 +695,9 @@ nomSemExceptions = ["member"]
 
 
 #allSentsR = allSents[(860+579+7940+307+229+12+3929):] #R stands for reduced and is for testing purposes
-
 allSentsR = allSents
 
 #TODO: Embedding depth, idiomaticity, 
-
 clauseTableColnames = ["ClauseID","Doc","SentID","SentForm","PredType",
                             "PredForm","PredLemma","PredMorph","VMorphForm","PredTense",
                             "PredAspect","Voice","PredSylCo","PredFreq","Aux3","Aux2","Aux1",
@@ -820,8 +828,21 @@ for sentence in allSentsR:
                     RCconj = True;
             elif len(currSubjectCands)>0:
                 currSubject = currSubjectCands[0];
+            elif featsInfo["VerbForm"] == "Ger" and re.search("acl",df.iloc[i,]["DEPS"]):
+                print("GP",getParents(i+1, sentence, relation = "acl"));
+                headNoun = getParents(i+1, sentence, relation = "acl")[0];
+                
+                skips = [i + 1];
+                if re.search("acl",df.iloc[i,]["DEPREL"]):
+                    skips = skips + getDependentIDsFromDeprel(i+1,"conj",sentence);
+                else:
+                    skips = skips + [getMainConjID(i+1, sentence)];
+                skips = skips 
+                currSubjectCands = currSubjectCands + [getPhrase(headNoun["ID"],sentence, skips)];
+                currSubject = currSubjectCands[0]
             else:
                 currSubject = "NOSUBJ";
+                
             
             if currSubject != "NOSUBJ":
                 #Features that don't take heads into account
@@ -1005,9 +1026,43 @@ for sentence in allSentsR:
             print("CURRENTCLAUSEID::::::::::::::::::",currentClauseID)
     currSentID += 1;
             
+
+            
         
 print(clauseTable)
 clauseTable.to_csv(path_or_buf="oct5table.csv")
+
+i = 0;
+j = 0;
+k = 0;
+docTextTable  =  pd.DataFrame(columns=["Doc","Text"]);
+while i + j < len(allSents):
+    i = i + j;
+    sentence = allSents[i];
+    j = 1;
+    found = False;
+    currDoc = [sentence];
+    docText = str(j) + ". " + sentence["phrase"];
+    
+    
+    while found == False:
+        if (i + j) == len(allSents): found = True; break;
+        currSent = allSents[i+j];
+        if currSent['doc'] != sentence['doc']:
+            found = True;
+        else:
+            currDoc.append(allSents[i+j]);
+            docText =  docText +" " +  str(j) + ". " + " ".join(currSent["phraseDF"]["FORM"]);
+            j = j + 1;
+    
+    currentRow = dict();
+    currentRow["Doc"] = sentence['doc'];
+    currentRow["Text"] = docText;
+    docTextTable = docTextTable.append(currentRow,ignore_index=True)
+    print(j);
+    print(i);
+    
+docTextTable.to_csv(path_or_buf="docs.csv")
 
 
 #NMA! = Needs Manual Attention!

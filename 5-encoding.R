@@ -14,9 +14,13 @@ clauseTable = read_csv("dec22-table-withintersentence.csv")
 clauseTable$PredFreq = parse_double(clauseTable$PredFreq)
 clauseTable$PredSylCo = parse_double(clauseTable$PredSylCo)
 clauseTable$Voice = parse_factor(clauseTable$Voice, levels = c("Act","Pass"))
+clauseTable = clauseTable[1:3419,]
+
+
+correctionsFile = read_csv("dec22-table-withintersentence-modified-3000clauses.csv")
 
 #Select only sentences that are potentially passivisable
-clauseTablePassivisable = clauseTable %>% filter(Voice == "Pass" || ObjHead != "/" || OblHead != "/")
+clauseTablePassivisable = clauseTable %>% filter(PredType == "V" & (Voice == "Pass" | ObjHead != "/" | OblHead != "/"))
 clauseTablePassivisable %>% filter(Voice != "Act" & OblCase != "by")
 clauseTablePassivisable = clauseTablePassivisable %>% mutate(AgentSylCo = case_when(
   Voice == "Act" & SubjSylCo != "/" & !is.na(as.numeric(SubjSylCo)) ~ as.numeric(SubjSylCo),
@@ -30,7 +34,7 @@ clauseTablePassivisable = clauseTablePassivisable %>% mutate(ThemeSylCo = case_w
   TRUE ~ 0
 ))
 
-clauseTablePassivisable = clauseTablePassivisable[1:3000,]
+
 
 
 beta = c(0,0)
@@ -53,6 +57,6 @@ glm(voices ~ x1 + x2 + 0)
 fake_model = brm(voices ~ x1 + x2, data = data,  family = bernoulli(link = "logit"), chains = 1)
 
 
-pred_only_model_3000 = brm(Voice ~ (1 | PredLemma) + AgentSylCo + PredTense + PredMorph + PredFreq + ThemeSylCo + PredSylCo, data = clauseTablePassivisable, family = bernoulli(link = "logit"), init_r = 20, prior = set_prior("lasso(1)"), cores = getOption("mc.cores", 4L), chains = 1)
+pred_only_model_3000 = brm(Voice ~ (1 | PredLemma) + (1 | Doc) + AgentSylCo + ThemeSylCo + PredTense + PredMorph + PredFreq + ThemeSylCo + PredSylCo + PrevVoice1 + PrevVoice2 + PrevVoice3 + PrevVoice4 + PrevVoice5, data = clauseTablePassivisable, family = bernoulli(link = "logit"), init_r = 20, prior = set_prior("lasso(1)"), cores = getOption("mc.cores", 4L), chains = 1)
 
 pred_coefs = coef(pred_only_model)
