@@ -1,10 +1,4 @@
 # -*- coding: utf-8 -*-
-"""
-Spyder Editor
-
-This is a temporary script file.
-"""
-
 #Run this whenever restarting.
 import os;
 os.chdir("G:\我的雲端硬碟\corpus priming\eng")
@@ -328,10 +322,10 @@ def isHyponym(hyponym, synset_hypernym, proper=False):
         synsets_hyponym = [hyponym];
     answer = False;
     for synset_hyponym in synsets_hyponym:
-        if synset_hypernym in synset_hyponym.hypernyms():
+        if synset_hypernym in synset_hyponym.hypernyms() + synset_hyponym.instance_hypernyms():
             answer = True;
             break;
-        elif isHyponym(synset_hyponym.hypernyms(),synset_hypernym):
+        elif isHyponym(synset_hyponym.hypernyms() + synset_hyponym.instance_hypernyms(),synset_hypernym):
             answer = True;
             break;
     if proper == False:
@@ -412,6 +406,8 @@ def getNomSem(npHead, phrase, ner = False):
         anim = "time";
     elif isHyponym(lemma,synset_loc):
         anim = "loc";
+    elif isHyponym(lemma,synset_country):
+        anim = "org";
     elif isHyponym(lemma,synset_conc):
         anim = "conc";
     elif isHyponym(lemma,synset_nonconc):
@@ -436,6 +432,7 @@ synset_conc = wn.synsets('physical_entity')[0];
 synset_nonconc = wn.synsets('abstract_entity')[0];
 synset_loc = wn.synsets('location')[0];
 synset_time = wn.synsets('time')[4];
+synset_country = wn.synsets('country')[1];
 
 synset_period = wn.synsets('period')[4];
 synset_virus = wn.synsets('virus')[0];
@@ -710,7 +707,7 @@ clauseTableColnames = ["ClauseID","Doc","SentID","SentForm","PredType",
                             "ObjSylCo","ObjMorph","ObjSynType","ObjPosID","OvertObl",
                             "OblCase","OblHead","OblFreq","OblDef","OblNum",
                             "OblPers","OblAnim","OblSylCo","OblMorph","OblSynType","OblPosID",
-                            "Obl2","Obl3"];
+                            "Obl2","Obl3","NonAlternatble"];
                        
 
 print(getParents(24, allSents[14], "conj"));
@@ -788,12 +785,15 @@ for sentence in allSentsR:
 
             if predTypes[j] == "V":        
                 currentRow["VMorphForm"] = featsInfo["VerbForm"];
+            if getValueFromInfo(featsInfo,"Mod") == "Imp":
+                currentRow["NonAlternable"] = True;
                 
             #Arguments
             #Subject first.
             currSubject = "NOSUBJ";
             
             currSubjectCands = getDependents(i+1,"nsubj",sentence);
+            currSubjectCands = getDependents(i+1,"csubj",sentence);
             currSubjectCands = currSubjectCands + getDependents(i+1, "nsubj:pass",sentence);
             currSubjectCands = currSubjectCands + getDependentsFromDeprel(i+1,"nsubj",sentence);
             currSubjectCands = currSubjectCands + getDependentsFromDeprel(i+1,"nsubj:pass",sentence);
@@ -1031,7 +1031,7 @@ for sentence in allSentsR:
             
         
 print(clauseTable)
-clauseTable.to_csv(path_or_buf="dec25table.csv")
+clauseTable.to_csv(path_or_buf="dec26table.csv")
 
 i = 0;
 j = 0;

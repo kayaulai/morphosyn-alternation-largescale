@@ -31,7 +31,19 @@ correctionsFilePassiveAgents = read_csv("dec22-table-withintersentence-modified-
 correctionsFilePassiveAgents = correctionsFilePassiveAgents %>% filter(!is.na(AgentDesc))
 correctionsFilePassiveAgents = correctionsFilePassiveAgents %>% select(c("ClauseID","Doc","AgentDesc","AgentDef","AgentNum","AgentPers",	"AgentAnim"))
 
-clauseTable = clauseTable %>% left_join(correctionsFilePassiveAgents, by = c("ClauseID","Doc"), suffix = c("",".y"))
+clauseTable = clauseTable %>% left_join(correctionsFilePassiveAgents, by = c("ClauseID","Doc"), suffix = c("",".1"))
+
+correctionsFileActiveAgents = read_csv("dec25table-corrtable-implicitsubjs-first3000.csv")
+correctionsFileActiveAgents = correctionsFileActiveAgents %>% filter(!is.na(AgentDesc))
+correctionsFileActiveAgents = correctionsFileActiveAgents %>% select(c("ClauseID","Doc","AgentDesc","AgentDef","AgentNum","AgentPers",	"AgentAnim"))
+
+clauseTable = clauseTable %>% left_join(correctionsFileActiveAgents, by = c("ClauseID","Doc"), suffix = c("",".2"))
+clauseTable = clauseTable %>% mutate(AgentDesc = coalesce(AgentDesc,AgentDesc.2),
+                                     AgentDef = coalesce(AgentDef,AgentDef.2),
+                                     AgentNum = coalesce(AgentNum,AgentNum.2),
+                                     AgentPers = coalesce(AgentPers,AgentPers.2),
+                                     AgentPers = coalesce(AgentAnim,AgentAnim.2)) %>%
+                              select(-c(AgentDesc.2,AgentDef.2,AgentNum.2,AgentPers.2,AgentAnim.2))
 
 #Select only sentences that are potentially passivisable
 clauseTablePassivisable = clauseTable %>% filter(PredType == "V" & (Voice == "Pass" | ObjHead != "/" | OblHead != "/"))
@@ -150,28 +162,41 @@ for(i in 1:nrow(agentAnimMatrix)){
   }
 }
 
+
+clauseTablePassivisable = clauseTablePassivisable %>% mutate(AgentDefTrue = case_when(
+  Voice == "Act" & isNotNull(SubjDef) ~ SubjDef == "def",
+  Voice == "Pass" & OblDef != "/" & !is.na(as.numeric(OblDef)) ~ OblDef == "def",
+  AgentDef != "/" & !is.na(as.numeric(AgentDef)) ~ AgentDef == "def",
+  TRUE ~ FALSE),
+  ThemeDefTrue = case_when(
+    Voice == "Pass" & SubjDef != "/" & !is.na(as.numeric(SubjDef)) ~ (SubjDef) == "def",
+    Voice == "Act" & ObjDef != "/" & !is.na(as.numeric(ObjDef)) ~ (ObjDef) == "def",
+    Voice == "Act" & OblDef != "/" & !is.na(as.numeric(OblDef)) ~ (OblDef) == "def",
+    #ThemeDef != "/" & !is.na(as.numeric(ThemeDef)) ~ ThemeDef == "def",
+    TRUE ~ FALSE)
+)
+
+
+
+clauseTablePassivisable = clauseTablePassivisable %>% mutate(AgentPlurTrue = case_when(
+  Voice == "Act" & isNotNull(SubjNum) ~ SubjNum == "Plur",
+  Voice == "Pass" & OblNum != "/" & !is.na(as.numeric(OblNum)) ~ OblNum == "Plur",
+  AgentNum != "/" & !is.na(as.numeric(AgentNum)) ~ AgentNum == "Plur",
+  TRUE ~ FALSE),
+  ThemePlurTrue = case_when(
+    Voice == "Pass" & SubjNum != "/" & !is.na(as.numeric(SubjNum)) ~ (SubjNum) == "Plur",
+    Voice == "Act" & ObjNum != "/" & !is.na(as.numeric(ObjNum)) ~ (ObjNum) == "Plur",
+    Voice == "Act" & OblNum != "/" & !is.na(as.numeric(OblNum)) ~ (OblNum) == "Plur",
+    #ThemePlur != "/" & !is.na(as.numeric(ThemePlur)) ~ ThemePlur == "Plur",
+    TRUE ~ FALSE)
+)
+
 clauseTablePassivisable = cbind(clauseTablePassivisable, agentAnimMatrix)
 
-beta = c(0,0)
-phi = 0
-f = function(x, z){return(-2 + t(beta) %*% x + phi * z)}
-x1 = rnorm(100)
-x2 = rnorm(100)
-
-t=1
-voices = rbinom(1,1,
-                exp(f(c(x1[t],x2[t]),.5))/
-                  (1+exp(f(c(x1[t],x2[t]),.5))))
-for(t in 2:100){
-  voices = append(voices, rbinom(1,1,exp(f(c(x1[t],x2[t]),voices[t-1]))/
-                                   (1+exp(f(c(x1[t],x2[t]),voices[t-1])))))
-}
-data = data.frame(voices,x1,x2)
-glm(voices ~ x1 + x2 + 0)
-
-fake_model = brm(voices ~ x1 + x2, data = data,  family = bernoulli(link = "logit"), chains = 1)
 
 
-pred_only_model_3000 = brm(Voice ~ (1 | PredLemma) + (1 | Doc) + AgentSylCo + AgentFreqAM + AgentFreqGM + AgentPersEgo + AgentPersSAP +  AgentConcrete + AgentSetting + AgentAgentCollective + AgentDisplacable + AgentVolitional + AgentMoving + ThemeSylCo + ThemeFreqAM + ThemeFreqGM + ThemePersEgo + ThemePersSAP +  PredTense + PredFreq + PredSylCo + PrevVoice1 + PrevVoice2 + PrevVoice3 + PrevVoice4 + PrevVoice5, data = clauseTablePassivisable, family = bernoulli(link = "logit"), init_r = 20, prior = set_prior("lasso(1)"), cores = getOption("mc.cores", 4L), chains = 1)
+pred_only_model_3000 = brm(Voice ~ (1 | PredLemma) + (1 | Doc) + AgentSylCo + AgentFreqAM + AgentFreqGM + AgentPersEgo + AgentPersSAP +  AgentConcrete + AgentSetting + AgentAgentCollective + AgentDisplacable + AgentVolitional + AgentMoving + AgentDefTrue + AgentPlurTrue + ThemeSylCo + ThemeFreqAM + ThemeFreqGM + ThemePersEgo + ThemePersSAP + ThemeDefTrue + ThemePlurTrue + PredTense + PredFreq + PredSylCo + PrevVoice1 + PrevVoice2 + PrevVoice3 + PrevVoice4 + PrevVoice5, data = clauseTablePassivisable, family = bernoulli(link = "logit"), init_r = 20, prior = set_prior("lasso(1)"), cores = getOption("mc.cores", 4L), chains = 1)
 
 pred_coefs = coef(pred_only_model)
+
+
