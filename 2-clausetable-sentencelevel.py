@@ -285,7 +285,7 @@ def combineNPFeatures(fullNPfeatures, coreffeatures, prefix):
     finalBundle[prefix + "Head"] = coreffeatures[prefix + "Head"];
     finalBundle[prefix + "Morph"] = coreffeatures[prefix + "Morph"];
     finalBundle[prefix + "Pers"] = fullNPfeatures[prefix + "Pers"];
-    finalBundle[prefix + "Anim"] = fullNPfeatures[prefix + "Anim"]
+    finalBundle[prefix + "Anim"] = fullNPfeatures[prefix + "Anim"];
     finalBundle[prefix + "Num"] = fullNPfeatures[prefix + "Num"];
     finalBundle[prefix + "SynType"] = coreffeatures[prefix + "SynType"];
     return(finalBundle)
@@ -416,6 +416,7 @@ def getNomSem(npHead, phrase, ner = False):
         anim = "conc";
     elif isHyponym(lemma,synset_nonconc):
         anim = "nonconc";
+        
     
     appos = getDependents(headID, "appos", phrase)
     if (anim == "/") & (len(appos) > 0):
@@ -828,7 +829,7 @@ for sentence in allSentsR:
                     RCconj = True;
             elif len(currSubjectCands)>0:
                 currSubject = currSubjectCands[0];
-            elif featsInfo["VerbForm"] == "Ger" and re.search("acl",df.iloc[i,]["DEPS"]):
+            elif getValueFromInfo(featsInfo,"VerbForm") == "Ger" and re.search("acl",df.iloc[i,]["DEPS"]):
                 print("GP",getParents(i+1, sentence, relation = "acl"));
                 headNoun = getParents(i+1, sentence, relation = "acl")[0];
                 
@@ -1030,7 +1031,7 @@ for sentence in allSentsR:
             
         
 print(clauseTable)
-clauseTable.to_csv(path_or_buf="oct5table.csv")
+clauseTable.to_csv(path_or_buf="dec25table.csv")
 
 i = 0;
 j = 0;
