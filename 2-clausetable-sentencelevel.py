@@ -291,8 +291,6 @@ def combineNPFeatures(fullNPfeatures, coreffeatures, prefix):
     finalBundle[prefix + "SynType"] = coreffeatures[prefix + "SynType"];
     return(finalBundle)
         
-def doNothing():
-    a = 1;
 
 
 def getValueFromInfo(info, key):
@@ -654,17 +652,29 @@ def extractPredProperties(predID, phrase, prefix):
     if "Voice" in featsInfo:
         props["Voice"] = featsInfo["Voice"];
         props["PassAux"] = auxLemmas[0];
+    elif len(auxiliaries) == 0 and getValueFromInfo(featsInfo,"VerbForm") == "Part" and getValueFromInfo(featsInfo,"Tense") == "Past":
+        #Things like 'the teacher killed by the doctor...' not considered RCs by UD for some reason
+        props["Voice"] = "Pass";        
     else:
         props["Voice"] = "Act";
     
+    props[prefix + "Fin"] = "Nonfin";
     if getValueFromInfo(featsInfo,"VerbForm") == "Fin":
         props[prefix + "Fin"] = "Fin";
     elif props["Voice"] == "Pass":
-        passAuxInfo = getInfoFromFeats(getHeads(predID+1,auxiliaries[0])[0]["FEATS"]);
-        if getValueFromInfo(passAuxInfo,"VerbForm") == "Fin": props[prefix + "Fin"] = "Fin";
-        else: props[prefix + "Fin"] = "Inf";
-    else:
-        props[prefix + "Fin"] = "Nonfin";
+        if len(auxiliaries) > 0:
+            passAuxInfo = getInfoFromFeats(getHeads(predID+1,auxiliaries[0])[0]["FEATS"]);
+            if getValueFromInfo(passAuxInfo,"VerbForm") == "Fin":
+                props[prefix + "Fin"] = "Fin";
+        elif len(auxiliaries) == 0:
+            props[prefix + "Fin"] = "Fin";             
+    elif len(auxiliaries) != 0:
+        print("hi");
+        auxHeadZero = getHeads(predID+1,auxiliaries[0])[0]
+        if getValueFromInfo(getInfoFromFeats(auxHeadZero["FEATS"]),"VerbForm") == "Fin":
+            props[prefix + "Fin"] = "Fin";
+                
+            
         
         
     #Syllable count. Simple!
@@ -696,13 +706,12 @@ def extractPredProperties(predID, phrase, prefix):
         props[prefix + "Tense"] = "Tenseless";
     #Determine aspect from the auxiliaries
     props[prefix + "Aspect"] = "/"
-    try:
+    print(getValueFromInfo(featsInfo,"VerbForm"))
+    if len(auxiliaries) > 0:
         if (props["Aux1"] == "being") | (props["Aux1"] == "getting"):
             props[prefix + "Aspect"] = "Prog";
-        elif getValueFromInfo(featsInfo,"VerbForm") == "Part" & getValueFromInfo(featsInfo,"VerbForm") == "Pres":
-            props[prefix + "Aspect"] = "Prog";
-    except:
-        doNothing();
+    if (getValueFromInfo(featsInfo,"VerbForm") == "Part" and getValueFromInfo(featsInfo,"VerbForm") == "Pres") or getValueFromInfo(featsInfo,"VerbForm") == "Ger":
+        props[prefix + "Aspect"] = "Prog";
         
     for aux in auxLemmas:
         if aux == "have":
@@ -723,8 +732,8 @@ nomSemExceptions = ["member"]
 
 
 #allSentsR = allSents[(860+579+7940+307+229+12+3929):] #R stands for reduced and is for testing purposes
-#allSentsR = allSents
-allSentsR = allSents[1:1350]
+allSentsR = allSents[1:2]
+#allSentsR = allSents[0:1350]
 
 #TODO: Embedding depth, idiomaticity, 
 clauseTableColnames = ["ClauseID","Doc","SentID","SentForm","ClauseForm","PredType",
@@ -987,18 +996,20 @@ for sentence in allSentsR:
                 currObliqueCands = constituentUnique(i+1, currObliqueCands);
                 if (currentRow["Voice"] == "Pass") and (len(currObliqueCands) > 1):
                     currObliqueCands0HeadID = getHeads(i+1, currObliqueCands[0])[0]["ID"];
-                    zeroCase = getDependents(currObliqueCands0HeadID,"case",sentence)[0];
-                    zeroHead = getHeads(currObliqueCands0HeadID,zeroCase)[0];
-                    if zeroHead["FORM"] != "by":
-                        i = 1;
-                        for cand in currObliqueCands[1:len(currObliqueCands)]:
-                            currObliqueHeadID = getHeads(i+1, cand)[0]["ID"];
-                            currCase = getDependents(currObliqueHeadID,"case",sentence)[0];
-                            currHead = getHeads(currObliqueHeadID,currCase)[0];
-                            if currHead["FORM"] == "by":
-                                currObliqueCands[0], currObliqueCands[i] = currObliqueCands[i], currObliqueCands[0];
-                                break;
-                            i = i + 1;
+                    if len(getDependents(currObliqueCands0HeadID,"case",sentence)) > 0:
+                        zeroCase = getDependents(currObliqueCands0HeadID,"case",sentence)[0];
+                        zeroHead = getHeads(currObliqueCands0HeadID,zeroCase)[0];
+                        if zeroHead["FORM"] != "by":
+                            i = 1;
+                            for cand in currObliqueCands[1:len(currObliqueCands)]:
+                                currObliqueHeadID = getHeads(i+1, cand)[0]["ID"];
+                                if len(getDependents(currObliqueHeadID,"case",sentence)) > 0:
+                                    currCase = getDependents(currObliqueHeadID,"case",sentence)[0];
+                                    currHead = getHeads(currObliqueHeadID,currCase)[0];
+                                    if currHead["FORM"] == "by":
+                                        currObliqueCands[0], currObliqueCands[i] = currObliqueCands[i], currObliqueCands[0];
+                                        break;
+                                i = i + 1;
                             
                     
                 
@@ -1096,7 +1107,7 @@ for sentence in allSentsR:
             
         
 print(clauseTable)
-clauseTable.to_csv(path_or_buf="dec26table-first3000-v2.csv")
+clauseTable.to_csv(path_or_buf="dec26table-first3000-v3.csv")
 
 i = 0;
 j = 0;
