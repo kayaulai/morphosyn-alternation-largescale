@@ -1,4 +1,11 @@
 # -*- coding: utf-8 -*-
+#TODO
+#-Obliques other than the 1st
+#-Finitenes
+#-More fixing with relatives
+#Expletive subject -> NOT passivisable
+
+
 #Run this whenever restarting.
 import os;
 os.chdir("G:\我的雲端硬碟\corpus priming\eng")
@@ -449,7 +456,22 @@ nomSemExceptions = ["member"]
 #Accepting multiple values: SubjHead, SubjFreq, SubjDef, SubjAnim, SubjSynType, SubjMorph
 #Combined: SubjSylCo, SubjNum, SubjPers
 
-
+def constituentUnique(headID, constituents):
+    ids = [];
+    retain = [];
+    newConstituentList = constituents;
+    for constituent in constituents:
+        currHeadID = getHeads(headID, constituent)[0]["ID"];
+        if currHeadID in ids:
+            retain.append(False);
+        else:
+            ids.append(currHeadID);
+            retain.append(True);
+    for i in np.arange(len(constituents)-1,-1,-1):
+        if retain[i] == False:            
+            newConstituentList.pop(i); 
+            
+    return newConstituentList;
 
 def extractNPHeadProperties(heads, prefix = "", case = False):
      #This is divided into two sub-modules
@@ -507,7 +529,7 @@ def extractNPHeadProperties(heads, prefix = "", case = False):
         elif head["XPOS"] == "/":
             currProps["SynType"] = "/";
         else:
-            currProps["SynType"] = "NMN!";
+            currProps["SynType"] = "NMA!";
             
         #Frequency
         currProps["Freq"] = word_frequency(head["FORM"], 'en')
@@ -627,11 +649,23 @@ def extractPredProperties(predID, phrase, prefix):
         if k == 1:
             break;
         k = k - 1;
+        
+    featsInfo = getInfoFromFeats(df.iloc[predID,]["FEATS"])
     if "Voice" in featsInfo:
         props["Voice"] = featsInfo["Voice"];
-        props["PassAux"] = auxLemmas[0]
+        props["PassAux"] = auxLemmas[0];
     else:
         props["Voice"] = "Act";
+    
+    if getValueFromInfo(featsInfo,"VerbForm") == "Fin":
+        props[prefix + "Fin"] = "Fin";
+    elif props["Voice"] == "Pass":
+        passAuxInfo = getInfoFromFeats(getHeads(predID+1,auxiliaries[0])[0]["FEATS"]);
+        if getValueFromInfo(passAuxInfo,"VerbForm") == "Fin": props[prefix + "Fin"] = "Fin";
+        else: props[prefix + "Fin"] = "Inf";
+    else:
+        props[prefix + "Fin"] = "Nonfin";
+        
         
     #Syllable count. Simple!
     props[prefix + "SylCo"] = sylCount(df.iloc[predID,]["FORM"]);
@@ -643,16 +677,13 @@ def extractPredProperties(predID, phrase, prefix):
     #More abstract grammatical categories
     props[prefix + "Tense"] = "/"
     if getValueFromInfo(featsInfo,"VerbForm") == "Fin":
-        print("hello");
         props[prefix + "Tense"] = getValueFromInfo(featsInfo,"Tense");
     else:
-        print("hello");
         for aux in auxiliaries:
             auxHead = getHeads(predID+1,aux)[0];
             auxInfo = getInfoFromFeats(auxHead["FEATS"]);
             if "VerbForm" in auxInfo:
                 if auxInfo["VerbForm"] == "Fin":
-                    print("hello2");
                     if "Tense" in auxInfo:
                         props[prefix + "Tense"] = auxInfo["Tense"];
                         break;
@@ -663,7 +694,6 @@ def extractPredProperties(predID, phrase, prefix):
                 props[prefix + "Tense"] = "Past"; 
     if props[prefix + "Tense"] == "/":
         props[prefix + "Tense"] = "Tenseless";
-    print("hello3")
     #Determine aspect from the auxiliaries
     props[prefix + "Aspect"] = "/"
     try:
@@ -693,12 +723,13 @@ nomSemExceptions = ["member"]
 
 
 #allSentsR = allSents[(860+579+7940+307+229+12+3929):] #R stands for reduced and is for testing purposes
-allSentsR = allSents
+#allSentsR = allSents
+allSentsR = allSents[1:1350]
 
 #TODO: Embedding depth, idiomaticity, 
-clauseTableColnames = ["ClauseID","Doc","SentID","SentForm","PredType",
+clauseTableColnames = ["ClauseID","Doc","SentID","SentForm","ClauseForm","PredType",
                             "PredForm","PredLemma","PredMorph","VMorphForm","PredTense",
-                            "PredAspect","Voice","PredSylCo","PredFreq","Aux3","Aux2","Aux1",
+                            "PredAspect","Voice","PredSylCo","PredFreq","PredFin","Aux3","Aux2","Aux1",
                             "PassAux","OvertSubj","CovertSubj","SubjRef",
                             "SubjHead","SubjFreq","SubjDef","SubjNum",
                             "SubjPers","SubjAnim","SubjSynType",
@@ -707,7 +738,7 @@ clauseTableColnames = ["ClauseID","Doc","SentID","SentForm","PredType",
                             "ObjSylCo","ObjMorph","ObjSynType","ObjPosID","OvertObl",
                             "OblCase","OblHead","OblFreq","OblDef","OblNum",
                             "OblPers","OblAnim","OblSylCo","OblMorph","OblSynType","OblPosID",
-                            "Obl2","Obl3","NonAlternatble"];
+                            "Obl2","Obl3","Obl2PosID","Obl3PosID","NonAlternable"];
                        
 
 print(getParents(24, allSents[14], "conj"));
@@ -769,6 +800,9 @@ for sentence in allSentsR:
             currentRow = dict()
             for col in clauseTableColnames:
                 currentRow[col] = "/"
+                
+            currRowPhrase = getPhrase(i+1,sentence);
+            currentRow["ClauseForm"] = currRowPhrase['phrase'];
             
             #Fill in doc-level, sentence-level info and clause ID.
             currentRow["ClauseID"] = currentClauseID;
@@ -785,7 +819,7 @@ for sentence in allSentsR:
 
             if predTypes[j] == "V":        
                 currentRow["VMorphForm"] = featsInfo["VerbForm"];
-            if getValueFromInfo(featsInfo,"Mod") == "Imp":
+            if getValueFromInfo(featsInfo,"Mood") == "Imp":
                 currentRow["NonAlternable"] = True;
                 
             #Arguments
@@ -950,6 +984,25 @@ for sentence in allSentsR:
                 currOblique = "NOOBL";
                 currCovertOblique = None;
                 
+                currObliqueCands = constituentUnique(i+1, currObliqueCands);
+                if (currentRow["Voice"] == "Pass") and (len(currObliqueCands) > 1):
+                    currObliqueCands0HeadID = getHeads(i+1, currObliqueCands[0])[0]["ID"];
+                    zeroCase = getDependents(currObliqueCands0HeadID,"case",sentence)[0];
+                    zeroHead = getHeads(currObliqueCands0HeadID,zeroCase)[0];
+                    if zeroHead["FORM"] != "by":
+                        i = 1;
+                        for cand in currObliqueCands[1:len(currObliqueCands)]:
+                            currObliqueHeadID = getHeads(i+1, cand)[0]["ID"];
+                            currCase = getDependents(currObliqueHeadID,"case",sentence)[0];
+                            currHead = getHeads(currObliqueHeadID,currCase)[0];
+                            if currHead["FORM"] == "by":
+                                currObliqueCands[0], currObliqueCands[i] = currObliqueCands[i], currObliqueCands[0];
+                                break;
+                            i = i + 1;
+                            
+                    
+                
+                
                 if re.search("acl:relcl",df.iloc[i,]["DEPREL"]): #For relative clauses only
                     relations = extractRefRelationFromList(i+1,currObliqueCands)
                     if  len(relations) == 0:
@@ -980,6 +1033,7 @@ for sentence in allSentsR:
                     currOblique = currObliqueCands[0];
                 else:
                     currOblique = "NOOBL";
+                    
 
                 if currOblique != "NOOBL":
                     #Features that don't take heads into account
@@ -999,7 +1053,18 @@ for sentence in allSentsR:
                         oblHeadProps = combineNPFeatures(covertOblHeadProps,oblHeadProps,"Obl");
                         
                     for prop in oblHeadProps:
-                        currentRow[prop] = oblHeadProps[prop];                
+                        currentRow[prop] = oblHeadProps[prop];
+                
+                currObliqueCands = constituentUnique(i+1, currObliqueCands);
+                if len(currObliqueCands) > 1:
+                    currentRow["Obl2"] = currObliqueCands[1]['phrase'];
+                    if len(getHeads(i+1,currObliqueCands[1])) > 0:
+                        currentRow["Obl2PosID"] = getHeads(i+1,currObliqueCands[1])[0]["ID"];
+                if len(currObliqueCands) > 2:
+                    currentRow["Obl3"] = currObliqueCands[2]['phrase'];
+                    if len(getHeads(i+1,currObliqueCands[2])) > 0:
+                        currentRow["Obl3PosID"] = getHeads(i+1,currObliqueCands[2])[0]["ID"];
+                
 
             """
             if predTypes[j] == "N":
@@ -1031,7 +1096,7 @@ for sentence in allSentsR:
             
         
 print(clauseTable)
-clauseTable.to_csv(path_or_buf="dec26table.csv")
+clauseTable.to_csv(path_or_buf="dec26table-first3000-v2.csv")
 
 i = 0;
 j = 0;
