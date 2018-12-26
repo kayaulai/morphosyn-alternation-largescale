@@ -36,7 +36,7 @@ import sylcount as sc;
 from nltk import word_tokenize, pos_tag, ne_chunk, tree
 nltk.download('verbnet');
 from nltk.corpus import verbnet as vn
-import csv
+import csvkit
 from nltk.corpus import wordnet as wn
 s = shelve.open("G:\\我的雲端硬碟\\corpus priming\\eng\\rawdata.dat");
 allSents = s["allSents"];
@@ -44,7 +44,10 @@ s.close();
 pd.set_option("max_columns",50)
 from nltk.stem import WordNetLemmatizer
 wnl = WordNetLemmatizer()
-clauseTable = pd.read_csv("G:\\我的雲端硬碟\\corpus priming\\eng\\dec17table.csv", engine='python');
+clauseTable = pd.read_csv("G:\\我的雲端硬碟\\corpus priming\\eng\\dec26table-first3000-v3.csv", engine='python');
+
+#https://stackoverflow.com/a/40093482/9505928
+which = lambda lst:list(np.where(lst)[0])
 
 import spacy;
 nlp = spacy.load('en_core_web_sm')
@@ -69,7 +72,8 @@ i = 0;
 j = 0;
 k = 0;
 newClauseTable = pd.DataFrame();
-while i + j < len(allSents[0:40]):
+sentCorefTable = pd.DataFrame(dict(SentID=np.arange(0,len(allSents),1),Chains=np.full(len(allSents),"/")));
+while i + j < len(allSents[0:1350]):
     i = i + j;
     sentence = allSents[i];
     j = 1;
@@ -79,11 +83,22 @@ while i + j < len(allSents[0:40]):
     currSents = [allSents[i+j]];
     
     currClauses =  clauseTable.loc[clauseTable["Doc"] == currDoc,:];
+    firstIndex = currClauses.index[0]
+    lastIndex = currClauses.index[len(currClauses.index)-1]
     #currCorefTable = pd.DataFrame(columns=["SubjMention-","SubjMention-1","SubjMention-2","SubjMention-3","SubjMention-4","SubjMention-5","SubjMention-6","SubjMention-7","SubjMention-8","SubjMention-9","SubjMention-10","ObjMention1","ObjMention2","ObjMention3","ObjMention4","ObjMention5","ObjMention6","ObjMention7","ObjMention8","ObjMention9","ObjMention10"]);
     #currCorefTable = pd.DataFrame(["SubjChain","ObjChain","OblChain"])
     currClauses["SubjChain"] = np.full(currClauses.shape[0],"/");
     currClauses["ObjChain"] = np.full(currClauses.shape[0],"/");
     currClauses["OblChain"] = np.full(currClauses.shape[0],"/");
+    currClauses["Obl2Chain"] = np.full(currClauses.shape[0],"/");
+    currClauses["Obl3Chain"] = np.full(currClauses.shape[0],"/");
+    
+    #subjChainIndex = which([x == 'SubjChain' for x in list(currClauses)])[0]
+    #objChainIndex = which([x == 'ObjChain' for x in list(currClauses)])[0]
+    #oblChainIndex = which([x == 'OblChain' for x in list(currClauses)])[0]
+    #obl2ChainIndex = which([x == 'Obl2Chain' for x in list(currClauses)])[0]
+    #obl3ChainIndex = which([x == 'Obl3Chain' for x in list(currClauses)])[0]
+    #sentNumIndex = which([x == 'SentID' for x in list(currClauses)])[0];
     
     while found == False:
         if (i + j) == len(allSents): found = True; break;
@@ -100,25 +115,34 @@ while i + j < len(allSents[0:40]):
     for mention in mentionsList[k]:
         chainID = str(m);
         for item in mention[1]:
-              for i in np.arange(0,currClauses.shape[0]-1,1):
-                  if (currClauses.iloc[i,]["SentID"]+1)==item['sentNum']:
-                      print(item);
-                      if currClauses.iloc[i,]["SubjPosID"] != "/":
-                          subjIDs = [int(i) for i in splitConjString(currClauses.iloc[i,]["SubjPosID"])];
+             sentCorefTable.iloc[i + item['sentNum'],1] = addChain(sentCorefTable.iloc[i + item['sentNum'],1],chainID)
+             for p in np.arange(firstIndex,lastIndex,1):
+                  if (currClauses.loc[p,"SentID"]+1)==item['sentNum']:
+                      if (currClauses.loc[p,"SubjPosID"] != "/"):
+                          subjIDs = [int(n) for n in splitConjString(currClauses.loc[p,"SubjPosID"])];
+                          print("REACHED");
                           if item['headIndex'] in subjIDs:
-                              currClauses["SubjChain"][i] = addChain(currClauses["SubjChain"][i],chainID);
-                              print(currClauses["SubjChain"][i])
-                              print(addChain(currClauses["SubjChain"][i],chainID))
-                         
-                      if currClauses.iloc[i,]["ObjPosID"] != "/":
-                          objIDs = [int(i) for i in splitConjString(currClauses.iloc[i,]["ObjPosID"])];
+                              currClauses.loc[p,"SubjChain"] = addChain(currClauses.loc[p,"SubjChain"],chainID);
+                             
+                      if (currClauses.loc[p,"ObjPosID"] != "/"):
+                          objIDs = [int(n) for n in splitConjString(currClauses.loc[p,"ObjPosID"])];
                           if item['headIndex'] in objIDs:
-                              currClauses["ObjChain"][i] = addChain(currClauses["ObjChain"][i],chainID);
+                              currClauses.loc[p,"ObjChain"] = addChain(currClauses.loc[p,"ObjChain"],chainID);
                           
-                      if currClauses.iloc[i,]["OblPosID"] != "/":
-                          oblIDs = [int(i) for i in splitConjString(currClauses.iloc[i,]["OblPosID"])];
+                      if (currClauses.loc[p,"OblPosID"] != "/"):
+                          oblIDs = [int(n) for n in splitConjString(currClauses.loc[p,"OblPosID"])];
                           if item['headIndex'] in oblIDs:
-                              currClauses["OblChain"][i] = addChain(currClauses["OblChain"][i],chainID);
+                              currClauses.loc[p,"OblChain"] = addChain(currClauses.loc[p,"OblChain"],chainID);
+                      
+                      if (currClauses.loc[p,"Obl2PosID"] != "/"):
+                          obl2IDs = [int(n) for n in splitConjString(currClauses.loc[p,"Obl2PosID"])];
+                          if item['headIndex'] in obl2IDs:
+                              currClauses.loc[p,"Obl2Chain"] = addChain(currClauses.loc[p,"Obl2Chain"],chainID);
+                        
+                      if (currClauses.loc[p,"Obl3PosID"] != "/"):
+                          obl3IDs = [int(n) for n in splitConjString(currClauses.loc[p,"Obl3PosID"])];
+                          if item['headIndex'] in obl3IDs:
+                              currClauses.loc[p,"Obl3Chain"] = addChain(currClauses.loc[p,"Obl3Chain"],chainID);
         
         m = m + 1;
     
@@ -137,13 +161,13 @@ pctCols = [];
 for i in np.arange(1,k+1,1): pctCols.append("PrevVoice"+str(i));
 
 prevClausesTable = pd.DataFrame(columns=pctCols);
-for clause in clauseTable.iterrows():
+for clause in newClauseTable.iterrows():
     currID = clause[1]["ClauseID"];
     currRow = dict()
     for i in np.arange(max(1,currID-k),currID,1):
-        currRow["PrevVoice"+str(currID-i)] = clauseTable.iloc[i-1,]["Voice"]; #This line must be changed (i-1 is wrong)
+        currRow["PrevVoice"+str(currID-i)] = newClauseTable.iloc[i-1,]["Voice"]; #This line must be changed (i-1 is wrong)
     print(currRow)
     prevClausesTable = prevClausesTable.append(currRow,ignore_index=True)
     
-clauseTable = pd.concat([clauseTable,prevClausesTable], axis=1)
-clauseTable.to_csv(path_or_buf="dec22-table-withintersentence.csv")
+newClauseTable = pd.concat([newClauseTable,prevClausesTable], axis=1)
+newClauseTable.to_csv(path_or_buf="dec26-table-withintersentence.csv")
