@@ -33,8 +33,7 @@ isNotNull = function(string){
 }
 
 #Read CSV
-clauseTable = read_csv("dec26table-first3000-v3.csv")
-#clauseTable = read_csv("dec22-table-withintersentence.csv")
+clauseTable = read_csv("dec26-table-withintersentence.csv")
 clauseTable$PredFreq = parse_double(clauseTable$PredFreq)
 clauseTable$PredSylCo = parse_double(clauseTable$PredSylCo)
 clauseTable$Voice = parse_factor(clauseTable$Voice, levels = c("Act","Pass"))
@@ -52,6 +51,8 @@ correctionsFileActiveAgents = correctionsFileActiveAgents %>% filter(!is.na(Agen
 correctionsFileActiveAgents = correctionsFileActiveAgents %>% select(c("ClauseID","Doc","AgentDesc","AgentDef","AgentNum","AgentPers",	"AgentAnim"))
 
 
+sentCorefTable = read_csv("dec27-sentence-coref-table.csv")
+docs = unique(sentCorefTable$Doc)
 
 clauseTable = clauseTable %>% left_join(correctionsFileActiveAgents, by = c("ClauseID","Doc"), suffix = c("",".2"))
 clauseTable = clauseTable %>% mutate(AgentDesc = coalesce(AgentDesc,AgentDesc.2),
@@ -78,14 +79,17 @@ clauseTablePassivisable = clauseTablePassivisable %>% mutate(AgentSylCo = case_w
   Voice == "Pass" & OblCase == "by" & !is.na(as.numeric(OblSylCo))  ~ as.numeric(OblSylCo),
   TRUE ~ 9999
 ))
-clauseTablePassivisable$AgentSylCo[clauseTablePassivisable$AgentSylCo == 9999] = mean(clauseTablePassivisable$AgentSylCo[clauseTablePassivisable$AgentSylCo != 9999])
+
+#Syllable count
+clauseTablePassivisable$AgentSylCo[clauseTablePassivisable$AgentSylCo == 9999] = median(clauseTablePassivisable$AgentSylCo[clauseTablePassivisable$AgentSylCo != 9999])
 clauseTablePassivisable = clauseTablePassivisable %>% mutate(ThemeSylCo = case_when(
   Voice == "Act" & isNotNull(OblSylCo) ~ as.numeric(OblSylCo),
   Voice == "Act" & isNotNull(ObjSylCo) ~ as.numeric(ObjSylCo),
   Voice == "Pass" & !is.na(as.numeric(SubjSylCo))  ~ as.numeric(SubjSylCo),
   TRUE ~ 9999
 ))
-clauseTablePassivisable$AgentSylCo[clauseTablePassivisable$ThemeSylCo == 9999] = mean(clauseTablePassivisable$ThemeSylCo[clauseTablePassivisable$AgentSylCo != 9999])
+
+clauseTablePassivisable$AgentSylCo[clauseTablePassivisable$ThemeSylCo == 9999] = median(clauseTablePassivisable$ThemeSylCo[clauseTablePassivisable$AgentSylCo != 9999])
 
 clauseTablePassivisable = clauseTablePassivisable %>% mutate(ThemeFreqAM = case_when(
   Voice == "Act" & isNotNull(OblFreq) ~ mean(as.numeric(splitConjString(OblFreq))),
@@ -93,14 +97,16 @@ clauseTablePassivisable = clauseTablePassivisable %>% mutate(ThemeFreqAM = case_
   Voice == "Pass" & !is.na(as.numeric(SubjFreq))  ~ mean(as.numeric(splitConjString(SubjFreq))),
   TRUE ~ 9999
 ))
-clauseTablePassivisable$ThemeFreqAM[clauseTablePassivisable$ThemeFreqAM == 9999] = mean(clauseTablePassivisable$ThemeFreqAM[clauseTablePassivisable$ThemeFreqAM != 9999])
+
+#Frequency
+clauseTablePassivisable$ThemeFreqAM[clauseTablePassivisable$ThemeFreqAM == 9999] = median(clauseTablePassivisable$ThemeFreqAM[clauseTablePassivisable$ThemeFreqAM != 9999])
 
 clauseTablePassivisable = clauseTablePassivisable %>% mutate(AgentFreqAM = case_when(
   Voice == "Act" & isNotNull(SubjFreq) ~ as.numeric(SubjFreq),
   Voice == "Pass" & OblCase == "by" & !is.na(as.numeric(OblFreq))  ~ as.numeric(OblFreq),
   TRUE ~ 9999
 ))
-clauseTablePassivisable$AgentFreqAM[clauseTablePassivisable$AgentFreqAM == 9999] = mean(clauseTablePassivisable$AgentFreqAM[clauseTablePassivisable$ThemeFreqAM != 9999])
+clauseTablePassivisable$AgentFreqAM[clauseTablePassivisable$AgentFreqAM == 9999] = median(clauseTablePassivisable$AgentFreqAM[clauseTablePassivisable$ThemeFreqAM != 9999])
 
 clauseTablePassivisable = clauseTablePassivisable %>% mutate(ThemeFreqGM = case_when(
   Voice == "Act" & isNotNull(OblFreq) ~ gmean(as.numeric(splitConjString(OblFreq))),
@@ -108,14 +114,14 @@ clauseTablePassivisable = clauseTablePassivisable %>% mutate(ThemeFreqGM = case_
   Voice == "Pass" & !is.na(as.numeric(SubjFreq))  ~ gmean(as.numeric(splitConjString(SubjFreq))),
   TRUE ~ 9999
 ))
-clauseTablePassivisable$ThemeFreqGM[clauseTablePassivisable$ThemeFreqGM == 9999] = gmean(clauseTablePassivisable$ThemeFreqGM[clauseTablePassivisable$ThemeFreqGM != 9999])
+clauseTablePassivisable$ThemeFreqGM[clauseTablePassivisable$ThemeFreqGM == 9999] = median(clauseTablePassivisable$ThemeFreqGM[clauseTablePassivisable$ThemeFreqGM != 9999])
 
 clauseTablePassivisable = clauseTablePassivisable %>% mutate(AgentFreqGM = case_when(
   Voice == "Act" & isNotNull(SubjFreq) ~ as.numeric(SubjFreq),
   Voice == "Pass" & OblCase == "by" & !is.na(as.numeric(OblFreq))  ~ as.numeric(OblFreq),
   TRUE ~ 9999
 ))
-clauseTablePassivisable$AgentFreqGM[clauseTablePassivisable$AgentFreqGM == 9999] = gmean(clauseTablePassivisable$AgentFreqGM[clauseTablePassivisable$ThemeFreqGM != 9999])
+clauseTablePassivisable$AgentFreqGM[clauseTablePassivisable$AgentFreqGM == 9999] = median(clauseTablePassivisable$AgentFreqGM[clauseTablePassivisable$ThemeFreqGM != 9999])
 
 clauseTablePassivisable = clauseTablePassivisable %>% mutate(AgentPersEgo = case_when(
   Voice == "Act" & isNotNull(SubjPers) ~ SubjPers == "1",
@@ -205,7 +211,6 @@ clauseTablePassivisable = clauseTablePassivisable %>% mutate(AgentDefTrue = case
 )
 
 
-
 clauseTablePassivisable = clauseTablePassivisable %>% mutate(AgentPlurTrue = case_when(
   Voice == "Act" & isNotNull(SubjNum) ~ SubjNum == "Plur",
   Voice == "Pass" & isNotNull(OblNum) ~ OblNum == "Plur",
@@ -221,6 +226,17 @@ clauseTablePassivisable = clauseTablePassivisable %>% mutate(AgentPlurTrue = cas
 
 clauseTablePassivisable = cbind(clauseTablePassivisable, agentAnimMatrix)
 
+#Prev mentioned?
+for(doc in docs){
+  currClauseTable =  clauseTablePassivisable %>% filter(Doc == doc)
+  currSentTable = sentCorefTable %>% filter(Doc == doc)
+  clauseTablePassivisable = clauseTablePassivisable %>% mutate(prevMentioned = case_when(
+    (currSentTable %>% filter(SentID < parent.frame()[[SentID]]))$ ~ ,
+    TRUE ~ "/"
+  ))
+}
+
+write_csv(clauseTablePassivisable, "encoded-dec28.csv")
 
 lambda_ridge = exp(-10)
 ridge_vars = stanvar(x = lambda_ridge, name = "lambda_ridge") + stanvar(scode = "target += - lambda_ridge * dot_self(b);", block = "model")
@@ -231,17 +247,4 @@ pred_only_model_3000 = brm(paste("Voice ~ (1 | PredLemma) + (1 | Doc) + AgentSyl
 
 stanplot(pred_only_model_3000)
 waic(pred_only_model_3000)
-loo(pred_only_model_3000)
-kfold(pred_only_model_3000, K = 10)
-pred_coefs = coef(pred_only_model_3000)
 
-pred_only_model_3000 = brm(paste("Voice ~ (1 | PredLemma) + (1 | Doc) + AgentSylCo + AgentFreqAM + AgentFreqGM + AgentPersEgo + AgentPersSAP +  AgentConcrete + AgentSetting + AgentAgentCollective + AgentDisplacable + AgentVolitional + AgentMoving + AgentDefTrue + AgentPlurTrue + ThemeSylCo + ThemeFreqAM + ThemeFreqGM + ThemePersEgo + ThemePersSAP + ThemeDefTrue + ThemePlurTrue + PredTense + PredFreq + PredFin + PredSylCo + PrevVoice1 + PrevVoice2 + PrevVoice3 + PrevVoice4 + PrevVoice5",findAllInteractions(c("AgentPersEgo","AgentPersSAP"),c("ThemePersEgo","ThemePersSAP"))), data = clauseTablePassivisable, family = bernoulli(link = "logit"), init_r = 20, prior = set_prior("lasso(1)"), cores = getOption("mc.cores", 4L), stanvars = ridge_vars, chains = 1)
-
-
-pred_only_model_3000_nointeract = brm("Voice ~ (1 | PredLemma) + (1 | Doc) + AgentSylCo + AgentFreqAM + AgentFreqGM + AgentPersEgo + AgentPersSAP +  AgentConcrete + AgentSetting + AgentAgentCollective + AgentDisplacable + AgentVolitional + AgentMoving + AgentDefTrue + AgentPlurTrue + ThemeSylCo + ThemeFreqAM + ThemeFreqGM + ThemePersEgo + ThemePersSAP + ThemeDefTrue + ThemePlurTrue + PredTense + PredFreq + PredSylCo + PrevVoice1 + PrevVoice2 + PrevVoice3 + PrevVoice4 + PrevVoice5", data = clauseTablePassivisable, family = bernoulli(link = "logit"), init_r = 20, prior = set_prior("lasso(1)"), cores = getOption("mc.cores", 4L), chains = 1)
-
-
-pred_only_model_3000 = brm(paste("Voice ~ (1 | PredLemma) + (1 | Doc) + AgentSylCo + AgentFreqAM + AgentFreqGM + AgentPersEgo + AgentPersSAP +  AgentConcrete + AgentSetting + AgentAgentCollective + AgentDisplacable + AgentVolitional + AgentMoving + AgentDefTrue + AgentPlurTrue + ThemeSylCo + ThemeFreqAM + ThemeFreqGM + ThemePersEgo + ThemePersSAP + ThemeDefTrue + ThemePlurTrue + PredTense + PredFreq + PredSylCo + PrevVoice1 + PrevVoice2 + PrevVoice3 + PrevVoice4 + PrevVoice5 + ",findAllInteractions(c("AgentPersEgo","AgentPersSAP"),c("ThemePersEgo","ThemePersSAP")),"+",findAllInteractions(c("AgentConcrete","AgentSetting","AgentAgentCollective","AgentDisplacable","AgentVolitional","AgentMoving"),c("ThemeConcrete","ThemeSetting","ThemeAgentCollective","ThemeDisplacable","ThemeVolitional","ThemeMoving"))), data = clauseTablePassivisable, family = bernoulli(link = "logit"), init_r = 20, prior = set_prior("lasso(1)"), cores = getOption("mc.cores", 4L), stanvars = ridge_vars, chains = 1)
-
-
-pred_only_model_3000_modified = brm(paste("Voice ~ (1 | PredLemma) + (1 | Doc) + AgentSylCo + AgentFreqAM + AgentFreqGM + AgentPersEgo + AgentPersSAP +  AgentConcrete + AgentSetting + AgentAgentCollective + AgentDisplacable + AgentVolitional + AgentMoving + AgentDefTrue  + ThemeSylCo + ThemeFreqAM + ThemeFreqGM + ThemePersEgo + ThemePersSAP + ThemeDefTrue  + PredTense + PredFreq  + PrevVoice1 + PrevVoice2 + PrevVoice3 + PrevVoice4 + PrevVoice5 + ",findAllInteractions(c("AgentPersEgo","AgentPersSAP"),c("ThemePersEgo","ThemePersSAP"))), data = clauseTablePassivisable, family = bernoulli(link = "logit"), init_r = 20, prior = set_prior("lasso(1)"), cores = getOption("mc.cores", 4L), stanvars = ridge_vars, chains = 1)

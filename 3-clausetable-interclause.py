@@ -26,18 +26,12 @@ from wordfreq import word_frequency;
 from nltk.stem import WordNetLemmatizer
 wnl = WordNetLemmatizer()
 import nltk;
-from nltk.corpus import cmudict
-nltk.download('cmudict');
-d = cmudict.dict()
 #https://stackoverflow.com/a/4103234
 def nsyl(word):
   return [len(list(y for y in x if y[-1].isdigit())) for x in d[word.lower()]] 
-import sylcount as sc;
 from nltk import word_tokenize, pos_tag, ne_chunk, tree
 nltk.download('verbnet');
-from nltk.corpus import verbnet as vn
 import csvkit
-from nltk.corpus import wordnet as wn
 s = shelve.open("G:\\我的雲端硬碟\\corpus priming\\eng\\rawdata.dat");
 allSents = s["allSents"];
 s.close();
@@ -72,8 +66,8 @@ i = 0;
 j = 0;
 k = 0;
 newClauseTable = pd.DataFrame();
-sentCorefTable = pd.DataFrame(dict(SentID=np.arange(0,len(allSents),1),Chains=np.full(len(allSents),"/")));
-while i + j < len(allSents[0:1350]):
+sentCorefTable = pd.DataFrame(dict(OverallSentID=np.arange(0,len(allSents),1), Doc=np.full(len(allSents),"/"),SentID=np.full(len(allSents),"0"),Chains=np.full(len(allSents),"/")));
+while i + j < len(allSents[0:13]):
     i = i + j;
     sentence = allSents[i];
     j = 1;
@@ -110,13 +104,16 @@ while i + j < len(allSents[0:1350]):
             j = j + 1;
             
             
+    sentCorefTable.iloc[i:(i+j-1),1] = currDoc;
+    sentCorefTable.iloc[i:(i+j-1),2] = np.arange(0,j-1,1);
+    
     m = 0;
     currClausesNew = pd.DataFrame();
     for mention in mentionsList[k]:
         chainID = str(m);
         for item in mention[1]:
-             sentCorefTable.iloc[i + item['sentNum'],1] = addChain(sentCorefTable.iloc[i + item['sentNum'],1],chainID)
-             for p in np.arange(firstIndex,lastIndex,1):
+             sentCorefTable.iloc[i + item['sentNum'],3] = addChain(sentCorefTable.iloc[i + item['sentNum'],1],chainID)
+             for p in np.arange(firstIndex,lastIndex+1,1):
                   if (currClauses.loc[p,"SentID"]+1)==item['sentNum']:
                       if (currClauses.loc[p,"SubjPosID"] != "/"):
                           subjIDs = [int(n) for n in splitConjString(currClauses.loc[p,"SubjPosID"])];
@@ -154,6 +151,7 @@ while i + j < len(allSents[0:1350]):
     print(i);
 
 
+sentCorefTable.to_csv(path_or_buf="dec27-sentence-coref-table.csv")
 
 #Previous k clauses
 k = 10;

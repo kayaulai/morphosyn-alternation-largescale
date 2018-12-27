@@ -1,10 +1,15 @@
 # -*- coding: utf-8 -*-
 #TODO
-#-Obliques other than the 1st
 #-Finitenes
 #-More fixing with relatives
 #Expletive subject -> NOT passivisable
+#Promote obliques
+#Implicit objects
 
+#Manual annotation todos:
+#-NMAs and /s
+#-Finish passivisibility
+#-Implicit passive themes
 
 #Run this whenever restarting.
 import os;
@@ -391,8 +396,6 @@ def getNomSem(npHead, phrase, ner = False):
                     elif subtree.label() == "GPE":
                         anim = "loc";
                     elif subtree.label() == "ORGANIZATION":
-                        anim = "org";
-                    elif subtree.label() == "PERSON":
                         anim = "org";
             first = False;
     elif (lemma in ["I","you","we","he","she","me","him","her","us"]):
