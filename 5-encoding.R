@@ -9,6 +9,12 @@ splitConjString = function(conjString){
   return(strsplit(conjString,";;")[[1]])
 }
 
+splitChainString = function(chainString){
+  splitElements = strsplit(chainString,",")[[1]]
+  splitElements = as.integer(splitElements[splitElements != "/"])
+  return(splitElements)
+}
+
 gmean = function(x){
   return(prod(x)^(1/length(x)))
 }
@@ -228,12 +234,23 @@ clauseTablePassivisable = cbind(clauseTablePassivisable, agentAnimMatrix)
 
 #Prev mentioned?
 for(doc in docs){
-  currClauseTable =  clauseTablePassivisable %>% filter(Doc == doc)
-  currSentTable = sentCorefTable %>% filter(Doc == doc)
-  clauseTablePassivisable = clauseTablePassivisable %>% mutate(prevMentioned = case_when(
-    (currSentTable %>% filter(SentID < parent.frame()[[SentID]]))$ ~ ,
-    TRUE ~ "/"
-  ))
+  currClauseTable =  clauseTablePassivisable %>% filter(Doc == doc) %>% select(c(SentID, ClauseID, SubjChain, ObjChain, OblChain, Obl2Chain, Obl3Chain))
+  currSentTable = sentCorefTable %>% filter(Doc == doc) %>% select(-c(OverallSentID))
+  chains = sapply(currSentTable$Chains, splitChainString) #Note: element 1 of chains = SentID 0
+  chainCol = chains[currClauseTable$SentID] #A 'column' containing chain data, if tibbles allowed vector-valued cells
+  
+  determineIfPrevAppeared = function(currSentID, currGRChains){
+    prevApps = sapply(chains[1:currSentID], function(prevSentChains) return(length(intersect(prevSentChains, currGRChains)) > 0))
+    return(any(prevApps))
+  }
+  
+  currClauseTable = currClauseTable %>% mutate(SubjPrevAppeared = mapply(determineIfPrevAppeared, SentID, SubjChain),
+                                               ObjPrevAppeared = mapply(determineIfPrevAppeared, SentID, ObjChain),
+                                               OblPrevAppeared = mapply(determineIfPrevAppeared, SentID, OblChain),
+                                               Obl2PrevAppeared = mapply(determineIfPrevAppeared, SentID, Obl2Chain),
+                                               Obl3PrevAppeared = mapply(determineIfPrevAppeared, SentID, Obl3Chain))
+  
+  clauseTablePassivisable = clauseTablePassivisable %>% left_join(currClauseTable, by = by = c("ClauseID","Doc"))
 }
 
 write_csv(clauseTablePassivisable, "encoded-dec28.csv")

@@ -67,7 +67,7 @@ j = 0;
 k = 0;
 newClauseTable = pd.DataFrame();
 sentCorefTable = pd.DataFrame(dict(OverallSentID=np.arange(0,len(allSents),1), Doc=np.full(len(allSents),"/"),SentID=np.full(len(allSents),"0"),Chains=np.full(len(allSents),"/")));
-while i + j < len(allSents[0:13]):
+while i + j < len(allSents[0:1350]):
     i = i + j;
     sentence = allSents[i];
     j = 1;
@@ -112,7 +112,7 @@ while i + j < len(allSents[0:13]):
     for mention in mentionsList[k]:
         chainID = str(m);
         for item in mention[1]:
-             sentCorefTable.iloc[i + item['sentNum'],3] = addChain(sentCorefTable.iloc[i + item['sentNum'],1],chainID)
+             sentCorefTable.iloc[i + item['sentNum'],3] = addChain(sentCorefTable.iloc[i + item['sentNum'] - 1,3],chainID)
              for p in np.arange(firstIndex,lastIndex+1,1):
                   if (currClauses.loc[p,"SentID"]+1)==item['sentNum']:
                       if (currClauses.loc[p,"SubjPosID"] != "/"):
