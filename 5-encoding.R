@@ -19,6 +19,8 @@ gmean = function(x){
   return(prod(x)^(1/length(x)))
 }
 
+`%+%` = function(a, b) paste(a, b, sep="")
+
 findAllInteractions = function(factors, factors2 = NA){
   if(all(is.na(factors2))){
     factors = factors2
@@ -32,10 +34,17 @@ findAllInteractions = function(factors, factors2 = NA){
 }
 
 isNotNull = function(string){
-  string = as.character(string)
-  return(!any(splitConjString(string) == "/") & !any(splitConjString(string) == "")
-         & string != "" & !is.na(string)
-         & !any(splitConjString(string) == "NMA!"))
+    string = as.character(string)
+    if(is.na(string)){
+      isNotNull = F
+    } else if(length(string) == 0){
+      isNotNull = F
+    } else if (string == ""){
+      isNotNull = F
+    } else {
+      isNotNull = !any(splitConjString(string) == "/") & !any(splitConjString(string) == "") & !any(splitConjString(string) == "NMA!")
+    }
+    return(isNotNull)
 }
 
 #Read CSV
@@ -70,12 +79,13 @@ clauseTable = clauseTable %>% mutate(AgentDesc = coalesce(AgentDesc,AgentDesc.2)
 
 
 correctionsFilePassivisability = read_csv("dec26table-first3000-v2-passivisability.csv")
-correctionsFilePassivisability = correctionsFilePassivisability %>% filter(!is.na(NonAlternableCorr))
+correctionsFilePassivisability = correctionsFilePassivisability %>% filter(!is.na(NonAlternableCorr)) %>% select(ClauseID, Doc, NonAlternableCorr)
 clauseTable = clauseTable %>% left_join(correctionsFilePassivisability, by = c("ClauseID","Doc"), suffix = c("",".2")) %>%
   mutate(NonAlternable = case_when(NonAlternable != "/" ~ NonAlternable, TRUE ~ as.character(NA))) %>% 
   mutate(NonAlternable = coalesce(NonAlternable,as.character(NonAlternableCorr))) %>%
   select(-c(NonAlternableCorr))
 
+write_csv(clauseTable, "dec28-correctedtable.csv")
 
 #Select only sentences that are potentially passivisable
 clauseTablePassivisable = clauseTable %>% filter(PredType == "V" & (Voice == "Pass" | ObjHead != "/" | OblHead != "/") & is.na(NonAlternable))
@@ -129,6 +139,7 @@ clauseTablePassivisable = clauseTablePassivisable %>% mutate(AgentFreqGM = case_
 ))
 clauseTablePassivisable$AgentFreqGM[clauseTablePassivisable$AgentFreqGM == 9999] = median(clauseTablePassivisable$AgentFreqGM[clauseTablePassivisable$ThemeFreqGM != 9999])
 
+#Person
 clauseTablePassivisable = clauseTablePassivisable %>% mutate(AgentPersEgo = case_when(
   Voice == "Act" & isNotNull(SubjPers) ~ SubjPers == "1",
   Voice == "Pass" & isNotNull(OblPers) ~ OblPers == "1",
@@ -154,7 +165,7 @@ clauseTablePassivisable = clauseTablePassivisable %>% mutate(AgentPersEgo = case
   )
 
 
-
+#Animacy
 animacyLevels = c("human", "machine", "vehicle", "org", "animal", "time", "loc", "conc", "nonconc")
 animacyFeatures = c("Concrete","Setting","AgentCollective","Moving","Displacable","Volitional")
 animacyFeatureMatrix = matrix(c(1,0,0,1,1,1,#human
@@ -202,7 +213,7 @@ for(i in 1:nrow(agentAnimMatrix)){
   }
 }
 
-
+#TODO: Encode these
 clauseTablePassivisable = clauseTablePassivisable %>% mutate(AgentDefTrue = case_when(
   Voice == "Act" & isNotNull(SubjDef) ~ SubjDef == "def",
   Voice == "Pass" & isNotNull(OblDef) ~ OblDef == "def",
@@ -233,35 +244,131 @@ clauseTablePassivisable = clauseTablePassivisable %>% mutate(AgentPlurTrue = cas
 clauseTablePassivisable = cbind(clauseTablePassivisable, agentAnimMatrix)
 
 #Prev mentioned?
+givennessTable = data.frame()
+
+determineIfPrevAppearedSamePos = function(currSentID, currGRChains, allGRChains){
+  prevChains = sapply(as.character((allGRChains[allGRChains$currFullClauseTable.SentID < currSentID,2])),splitChainString)
+  currGRChainsAsVec = splitChainString(as.character(currGRChains))
+  prevApps = sapply(prevChains, function(prevSentChains) return(length(intersect(prevSentChains, currGRChainsAsVec)) > 0))
+  return(any(prevApps))
+}
+
+determineIfPrevAppeared = function(currSentID, currGRChains){
+  prevApps = sapply(chains[1:currSentID], function(prevSentChains) return(length(intersect(prevSentChains, splitChainString(currGRChains))) > 0))
+  return(any(prevApps))
+}
+
 for(doc in docs){
-  currClauseTable =  clauseTablePassivisable %>% filter(Doc == doc) %>% select(c(SentID, ClauseID, SubjChain, ObjChain, OblChain, Obl2Chain, Obl3Chain))
+  print(paste("Processing",doc))
+  
+  currClauseTable =  clauseTablePassivisable %>% filter(Doc == doc) %>% select(c(Doc, SentID, ClauseID, SubjChain, ObjChain, OblChain, Obl2Chain, Obl3Chain))
+  currFullClauseTable =  clauseTablePassivisable %>% filter(Doc == doc) %>% select(c(Doc, SentID, ClauseID, SubjChain, ObjChain, OblChain, Obl2Chain, Obl3Chain))
+  
   currSentTable = sentCorefTable %>% filter(Doc == doc) %>% select(-c(OverallSentID))
   chains = sapply(currSentTable$Chains, splitChainString) #Note: element 1 of chains = SentID 0
   chainCol = chains[currClauseTable$SentID] #A 'column' containing chain data, if tibbles allowed vector-valued cells
+  currClauseTable = currClauseTable %>% mutate(CombinedOblChain = paste(OblChain,Obl2Chain,Obl3Chain,sep=","))
+  currFullClauseTable = currFullClauseTable %>% mutate(CombinedOblChain = paste(OblChain,Obl2Chain,Obl3Chain,sep=","))
   
-  determineIfPrevAppeared = function(currSentID, currGRChains){
-    prevApps = sapply(chains[1:currSentID], function(prevSentChains) return(length(intersect(prevSentChains, currGRChains)) > 0))
-    return(any(prevApps))
-  }
+  
+  
+  #TODO: Previously mentioned in the same sentence? 
   
   currClauseTable = currClauseTable %>% mutate(SubjPrevAppeared = mapply(determineIfPrevAppeared, SentID, SubjChain),
                                                ObjPrevAppeared = mapply(determineIfPrevAppeared, SentID, ObjChain),
-                                               OblPrevAppeared = mapply(determineIfPrevAppeared, SentID, OblChain),
-                                               Obl2PrevAppeared = mapply(determineIfPrevAppeared, SentID, Obl2Chain),
-                                               Obl3PrevAppeared = mapply(determineIfPrevAppeared, SentID, Obl3Chain))
+                                               OblPrevAppeared = mapply(determineIfPrevAppeared, SentID, CombinedOblChain))
   
-  clauseTablePassivisable = clauseTablePassivisable %>% left_join(currClauseTable, by = by = c("ClauseID","Doc"))
+  
+  currClauseTable = currClauseTable %>% mutate(
+ SubjPrevAppearedSamePos = mapply(determineIfPrevAppearedSamePos, SentID, SubjChain, MoreArgs = list(data.frame(currFullClauseTable$SentID, currFullClauseTable$SubjChain))),
+ ObjPrevAppearedSamePos = mapply(determineIfPrevAppearedSamePos, SentID, ObjChain, MoreArgs = list(data.frame(currFullClauseTable$SentID, currFullClauseTable$ObjChain))),
+ OblPrevAppearedSamePos = mapply(determineIfPrevAppearedSamePos, SentID, OblChain, MoreArgs = list(data.frame(currFullClauseTable$SentID, currFullClauseTable$CombinedOblChain))))
+  
+  givennessTable = givennessTable %>% rbind(currClauseTable)
 }
+
+clauseTablePassivisable = clauseTablePassivisable %>% left_join(givennessTable %>% select(-c(SentID, SubjChain, ObjChain, OblChain, Obl2Chain, Obl3Chain, CombinedOblChain)), by = c("ClauseID", "Doc"))
+
+clauseTablePassivisable = clauseTablePassivisable %>% mutate(AgentPrevAppeared = case_when(
+  Voice == "Act" & isNotNull(SubjPrevAppeared) ~ as.integer(SubjPrevAppeared),
+  Voice == "Pass" & isNotNull(OblPrevAppeared) ~ as.integer(OblPrevAppeared),
+  TRUE ~ 0L),
+  ThemePrevAppeared = case_when(
+    Voice == "Pass" & isNotNull(SubjPrevAppeared) ~ as.integer(SubjPrevAppeared),
+    Voice == "Act" & isNotNull(ObjPrevAppeared) ~ as.integer(ObjPrevAppeared),
+    Voice == "Act" & isNotNull(OblPrevAppeared) ~ as.integer(OblPrevAppeared),
+    TRUE ~ 0L)
+)
+
+clauseTablePassivisable = clauseTablePassivisable %>% mutate(AgentPrevAppearedSamePos = case_when(
+  Voice == "Act" & isNotNull(SubjPrevAppearedSamePos) ~ as.integer(SubjPrevAppearedSamePos),
+  Voice == "Pass" & isNotNull(OblPrevAppearedSamePos) ~ as.integer(OblPrevAppearedSamePos),
+  TRUE ~ 0L),
+  ThemePrevAppearedSamePos = case_when(
+    Voice == "Pass" & isNotNull(SubjPrevAppearedSamePos) ~ as.integer(SubjPrevAppearedSamePos),
+    Voice == "Act" & isNotNull(ObjPrevAppearedSamePos) ~ as.integer(ObjPrevAppearedSamePos),
+    Voice == "Act" & isNotNull(OblPrevAppearedSamePos) ~ as.integer(OblPrevAppearedSamePos),
+    TRUE ~ 0L)
+)
+
+synTypeLevels = c("full", "proper", "wh", "det", "dem", "poss","pron", "num", "there")
+synTypeFeatures = c("Pronominal","Proper","Wh","Dem","Poss","Numeral","Det")
+synTypeFeatureMatrix = matrix(c(0,0,0,0,0,0,0,#full
+                                0,1,0,0,0,0,0,#proper
+                                1,0,1,0,0,0,1,#wh
+                                1,0,0,0,0,0,1,#det
+                                1,0,0,1,0,0,1,#dem
+                                1,0,0,0,1,0,0,#poss
+                                1,0,0,0,0,0,0,#pron
+                                1,0,0,0,0,1,1,#num
+                                1,0,0,1,0,1,1)#'there' category (to be deprecated)
+                              ,nrow=9,byrow=T,dimnames = list(synTypeLevels,synTypeFeatures))
+
+agentSynTypeColnames = paste("Agent",synTypeFeatures,sep="")
+agentSynTypeMatrix = matrix(0,nrow=nrow(clauseTablePassivisable),ncol=length(agentSynTypeColnames))
+colnames(agentSynTypeMatrix) = agentSynTypeColnames
+for(i in 1:nrow(agentSynTypeMatrix)){
+  AgentSynType = character(1)
+  if(clauseTablePassivisable[i,"Voice"] == "Act"){
+    if(isNotNull(clauseTablePassivisable[i,"SubjSynType"])){
+      AgentSynType = clauseTablePassivisable[i,"SubjSynType"]
+    }
+  } else {
+    if(isNotNull(clauseTablePassivisable[i,"OblSynType"])){
+      AgentSynType = clauseTablePassivisable[i,"OblSynType"]
+    } else if(isNotNull(clauseTablePassivisable[i,"ObjSynType"])){
+      AgentSynType = clauseTablePassivisable[i,"ObjSynType"]
+    }
+  }
+  
+  if(isNotNull(AgentSynType)){
+    print(AgentSynType)
+    AgentSynTypes = splitConjString(as.character(AgentSynType))
+    if(length(AgentSynTypes) == 1){
+      #print(paste("1",AgentSynTypes))
+      agentSynTypeMatrix[i,] = synTypeFeatureMatrix[AgentSynTypes,]
+    } else {
+      #print(paste("M",AgentSynTypes))
+      agentSynTypeMatrix[i,] = colMeans(synTypeFeatureMatrix[AgentSynTypes,])
+    }
+  }
+  
+}
+
+clauseTablePassivisable = clauseTablePassivisable %>% cbind(agentSynTypeMatrix)
+
 
 write_csv(clauseTablePassivisable, "encoded-dec28.csv")
 
-lambda_ridge = exp(-10)
+#lambda_ridge = exp(-10)
+lambda_ridge = 0
 ridge_vars = stanvar(x = lambda_ridge, name = "lambda_ridge") + stanvar(scode = "target += - lambda_ridge * dot_self(b);", block = "model")
 
+pred_only_model_3000 = brm(paste("Voice ~ (1 | PredLemma) + (1 | Doc) + AgentSylCo + AgentFreqAM + AgentFreqGM + AgentPersEgo + AgentPersSAP +  AgentConcrete + AgentSetting + AgentAgentCollective + AgentDisplacable + AgentVolitional + AgentMoving + AgentDefTrue + AgentPlurTrue + ThemeSylCo + ThemeFreqAM + ThemeFreqGM + ThemePersEgo + ThemePersSAP + ThemeDefTrue + ThemePlurTrue + PredAspect + PredTense + PredFreq + PredFin + PredSylCo + AgentPrevAppeared + ThemePrevAppeared + AgentPrevAppearedSamePos + ThemePrevAppearedSamePos + AgentPronominal + AgentProper + AgentWh + AgentDem  + AgentNumeral + AgentDet"), data = clauseTablePassivisable, family = bernoulli(link = "logit"), init_r = 20, prior = set_prior("lasso(1)"), cores = getOption("mc.cores", 4L), stanvars = ridge_vars, chains = 1)
 
-pred_only_model_3000 = brm(paste("Voice ~ (1 | PredLemma) + (1 | Doc) + AgentSylCo + AgentFreqAM + AgentFreqGM + AgentPersEgo + AgentPersSAP +  AgentConcrete + AgentSetting + AgentAgentCollective + AgentDisplacable + AgentVolitional + AgentMoving + AgentDefTrue + AgentPlurTrue + ThemeSylCo + ThemeFreqAM + ThemeFreqGM + ThemePersEgo + ThemePersSAP + ThemeDefTrue + ThemePlurTrue + PredAspect + PredTense + PredFreq + PredFin + PredSylCo + ",findAllInteractions(c("AgentPersEgo","AgentPersSAP"),c("ThemePersEgo","ThemePersSAP"))), data = clauseTablePassivisable, family = bernoulli(link = "logit"), init_r = 20, prior = set_prior("lasso(1)"), cores = getOption("mc.cores", 4L), stanvars = ridge_vars, chains = 1)
 
 
-stanplot(pred_only_model_3000)
+
+stanplot(pred_only_model_3000, c("AgentSylCo", "AgentFreqAM", "AgentFreqGM", "AgentPersEgo", "AgentPersSAP", " AgentConcrete", "AgentSetting", "AgentAgentCollective", "AgentDisplacable", "AgentVolitional", "AgentMoving", "AgentDefTrue", "AgentPlurTrue", "AgentPronominal", "AgentProper", "AgentWh", "AgentDem",  "AgentNumeral", "AgentDet", "ThemeSylCo", "ThemeFreqAM", "ThemeFreqGM", "ThemePersEgo", "ThemePersSAP", "ThemeDefTrue", "ThemePlurTrue", "PredAspect", "PredTense", "PredFreq", "PredFin", "PredSylCo", "AgentPrevAppeared", "ThemePrevAppeared", "AgentPrevAppearedSamePos", "ThemePrevAppearedSamePos"))
 waic(pred_only_model_3000)
 

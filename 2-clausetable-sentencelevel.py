@@ -294,6 +294,7 @@ def combineNPFeatures(fullNPfeatures, coreffeatures, prefix):
     finalBundle[prefix + "Anim"] = fullNPfeatures[prefix + "Anim"];
     finalBundle[prefix + "Num"] = fullNPfeatures[prefix + "Num"];
     finalBundle[prefix + "SynType"] = coreffeatures[prefix + "SynType"];
+    print("FB", finalBundle)
     return(finalBundle)
         
 
@@ -387,8 +388,8 @@ def getNomSem(npHead, phrase, ner = False):
         for subtree in nertree.subtrees():   
             if first == False:
                 containsHead = False;
-                for word in subtree:
-                    if word[1] == word:
+                for currWord in subtree:
+                    if currWord[0] == word:
                         containsHead = True;
                 if containsHead:                                        
                     if subtree.label() == "PERSON":
@@ -420,8 +421,10 @@ def getNomSem(npHead, phrase, ner = False):
         anim = "conc";
     elif isHyponym(lemma,synset_nonconc):
         anim = "nonconc";
+    elif npHead["XPOS"][0] == "V":
+        anim = "nonconc";
         
-    
+    #Use appositives
     appos = getDependents(headID, "appos", phrase)
     if (anim == "/") & (len(appos) > 0):
         appos = appos[0];
@@ -474,7 +477,7 @@ def constituentUnique(headID, constituents):
             
     return newConstituentList;
 
-def extractNPHeadProperties(heads, prefix = "", case = False):
+def extractNPHeadProperties(heads, prefix, phrase, case = False):
      #This is divided into two sub-modules
      #The first part is extracting the features
      #The second part is combining them
@@ -510,13 +513,13 @@ def extractNPHeadProperties(heads, prefix = "", case = False):
         elif head["XPOS"] in ["NNP","NNPS"]:
             currProps["SynType"] = "proper";
         elif head["XPOS"] in ["DT"]:
-            if getValueFromInfo(feats, "Prontype") == "Dem":
+            if getValueFromInfo(feats, "Prontype") == "Dem" or head["LEMMA"] == "that":
                 currProps["SynType"] = "dem";
             else:
                 currProps["SynType"] = "det";
             currProps["SynType"] = "det";
         elif head["XPOS"] in ["EX"]:
-            currProps["SynType"] = "there";
+            currProps["SynType"] = "dem";
         elif head["XPOS"] in ["WP","WDT"]:
             currProps["SynType"] = "wh";
         elif head["XPOS"] in ["PRP"]:
@@ -529,6 +532,10 @@ def extractNPHeadProperties(heads, prefix = "", case = False):
             currProps["SynType"] = "num";
         elif head["XPOS"] == "/":
             currProps["SynType"] = "/";
+        elif head["XPOS"][0] == "V" :
+            currProps["SynType"] = "full";
+        elif head["LEMMA"][0] in ["many","most","much"]:
+            currProps["SynType"] = "pron"; #Case where of-phrase is present handled below
         else:
             currProps["SynType"] = "NMA!";
             
@@ -543,6 +550,12 @@ def extractNPHeadProperties(heads, prefix = "", case = False):
                     currProps["Num"] = "Sing";
                 else:
                     currProps["Num"] = "Plur";
+            elif head["LEMMA"] == "many":
+                currProps["Num"] = "Plur"; 
+            elif head["LEMMA"] == "much":
+                currProps["Num"] = "Sing"               
+            elif head["LEMMA"] == "you":
+                currProps["Num"] = "Sing"; #because it's right in most cases, but manual checking is needed to correct in cases where it's not
                     
         #Person   
         currProps["Pers"] = getValueFromInfo(feats, "Person");
@@ -551,7 +564,7 @@ def extractNPHeadProperties(heads, prefix = "", case = False):
             
         #Definiteness        
         currProps["Def"] = "/";
-        currDeterminers = getDependents(head["ID"],"det",sentence)
+        currDeterminers = getDependents(head["ID"],"det",phrase)
         for determiner in currDeterminers:
             detHead = getHeads(head["ID"],determiner)[0]
             defInfo = getInfoFromFeats(detHead["FEATS"])
@@ -569,7 +582,7 @@ def extractNPHeadProperties(heads, prefix = "", case = False):
         
         #Case
         if case:
-            currCases = getDependents(head["ID"],"case",sentence,conjs=True); #We need to deal with e.g. by John and Mary
+            currCases = getDependents(head["ID"],"case",phrase,conjs=True); #We need to deal with e.g. by John and Mary
             if len(currCases[0]) == 1 and currCases[1] != "/":
                 currProps["Case"]  = getHeads(currCases[1],currCases[0][0])[0]["FORM"];
             elif len(currCases[0]) > 0:
@@ -584,14 +597,24 @@ def extractNPHeadProperties(heads, prefix = "", case = False):
         #Zaenen et al. (2004)
         #human, org, animal, place, time,
         #concrete, nonconc, mac, veh
-        currProps["Anim"] = getNomSem(head,sentence,
-                  head["XPOS"] in ["NNP","NNPS"]);
+        currProps["Anim"] = getNomSem(head,phrase,head["XPOS"] in ["NNP","NNPS"]);
+                 
+        if head["LEMMA"] in ["many","most","much","more","less","least","few","lot","plenty","any","none","enough","little","bit","both","neither","either"] or head["XPOS"] == "CD":
+            if len(getDependents(head["ID"],"nmod:of",phrase)) > 0:
+                ofPhrase = getDependents(head["ID"],"nmod:of",phrase)[0];
+                ofHeads = getHeads(head["ID"],ofPhrase);
+                ofProps = extractNPHeadProperties(ofHeads,"",sentence);
+                for prop in list(ofProps):
+                    currProps[prop] = ofProps[prop];
+                    
+            
             
         #Exceptions
         if head["LEMMA"] in nomSemExceptions: 
             currProps["Anim"] = "NMA!";
             
         headPropsSep.append(currProps)
+        
     
      #Part II: Combination
      multValProps = ["Head", "Freq", "Def", "Anim",
@@ -735,7 +758,7 @@ nomSemExceptions = ["member"]
 
 
 #allSentsR = allSents[(860+579+7940+307+229+12+3929):] #R stands for reduced and is for testing purposes
-allSentsR = allSents[1:2]
+allSentsR = allSents[0:100]
 #allSentsR = allSents[0:1350]
 
 #TODO: Embedding depth, idiomaticity, 
@@ -839,7 +862,7 @@ for sentence in allSentsR:
             currSubject = "NOSUBJ";
             
             currSubjectCands = getDependents(i+1,"nsubj",sentence);
-            currSubjectCands = getDependents(i+1,"csubj",sentence);
+            currSubjectCands = currSubjectCands + getDependents(i+1,"csubj",sentence);
             currSubjectCands = currSubjectCands + getDependents(i+1, "nsubj:pass",sentence);
             currSubjectCands = currSubjectCands + getDependentsFromDeprel(i+1,"nsubj",sentence);
             currSubjectCands = currSubjectCands + getDependentsFromDeprel(i+1,"nsubj:pass",sentence);
@@ -903,12 +926,13 @@ for sentence in allSentsR:
                     subjectHeads = getHeads(primConjunctID,currSubject);
                 else:
                     subjectHeads = getHeads(i+1,currSubject);
-                subjHeadProps = extractNPHeadProperties(subjectHeads,"Subj");
+                subjHeadProps = extractNPHeadProperties(subjectHeads,"Subj",sentence);
                 if currCovertSubject:
                     covertSubjectHeads = getHeads(i+1,currCovertSubject,RC=True);
-                    covertSubjHeadProps = extractNPHeadProperties(covertSubjectHeads,"Subj");
+                    covertSubjHeadProps = extractNPHeadProperties(covertSubjectHeads,"Subj",sentence);
                     subjHeadProps = combineNPFeatures(covertSubjHeadProps,subjHeadProps,"Subj")
                 
+                print("SHP",subjHeadProps)
                 for prop in subjHeadProps:
                     currentRow[prop] = subjHeadProps[prop];                
             
@@ -978,7 +1002,7 @@ for sentence in allSentsR:
                         objectHeads = getHeads(primConjunctID,currObject);
                     else:
                         objectHeads = getHeads(i+1,currObject);
-                    objHeadProps = extractNPHeadProperties(objectHeads,"Obj");
+                    objHeadProps = extractNPHeadProperties(objectHeads,"Obj",sentence);
                     
                     if currCovertObject:
                         covertObjectHeads = getHeads(i+1,currCovertObject,RC=True);
@@ -1059,11 +1083,11 @@ for sentence in allSentsR:
                         obliqueHeads = getHeads(primConjunctID,currOblique);
                     else:
                         obliqueHeads = getHeads(i+1,currOblique);
-                    oblHeadProps = extractNPHeadProperties(obliqueHeads,"Obl",case=True);
+                    oblHeadProps = extractNPHeadProperties(obliqueHeads,"Obl",sentence,case=True);
                     
                     if currCovertOblique:
                         covertObliqueHeads = getHeads(i+1,currCovertOblique,RC=True);
-                        covertOblHeadProps = extractNPHeadProperties(covertObliqueHeads,"Obl");
+                        covertOblHeadProps = extractNPHeadProperties(covertObliqueHeads,"Obl",sentence);
                         oblHeadProps = combineNPFeatures(covertOblHeadProps,oblHeadProps,"Obl");
                         
                     for prop in oblHeadProps:
@@ -1093,7 +1117,7 @@ for sentence in allSentsR:
                     objectHeads = getHeads(primConjunctID,currObject);
                 #else:
                     objectHeads = getHeads(i+1,currObject);
-                objHeadProps = extractNPHeadProperties(objectHeads,"Obj");
+                objHeadProps = extractNPHeadProperties(objectHeads,"Obj",sentence);
                     
                 for prop in objHeadProps:
                     currentRow[prop] = objHeadProps[prop];                
@@ -1110,7 +1134,7 @@ for sentence in allSentsR:
             
         
 print(clauseTable)
-clauseTable.to_csv(path_or_buf="dec26table-first3000-v3.csv")
+clauseTable.to_csv(path_or_buf="dec28table-first3000-v3.csv")
 
 i = 0;
 j = 0;
