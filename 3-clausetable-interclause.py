@@ -104,8 +104,8 @@ while i + j < len(allSents[0:1350]):
             j = j + 1;
             
             
-    sentCorefTable.iloc[i:(i+j-1),1] = currDoc;
-    sentCorefTable.iloc[i:(i+j-1),2] = np.arange(0,j-1,1);
+    sentCorefTable.iloc[i:(i+j),1] = currDoc;
+    sentCorefTable.iloc[i:(i+j),2] = np.arange(0,j,1);
     
     m = 0;
     currClausesNew = pd.DataFrame();

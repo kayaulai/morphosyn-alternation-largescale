@@ -33,17 +33,31 @@ findAllInteractions = function(factors, factors2 = NA){
   return(paste(strings,collapse=" + "))
 }
 
+componentIsNotNull = function(component){
+  if(is.na(component)){
+    isNotNull = F
+  } else if (any(component == "")){
+    isNotNull = F
+  } else if (is.null(component)){
+    isNotNull = F
+  } else {
+    isNotNull = !any(splitConjString(component) == "/") & !any(splitConjString(component) == "") & !any(splitConjString(component) == "NMA!")
+  }
+  return(isNotNull)
+}
+
 isNotNull = function(string){
+  if(is.null(string)){
+    isNotNull = FALSE
+  } else {
     string = as.character(string)
-    if(is.na(string)){
-      isNotNull = F
-    } else if(length(string) == 0){
-      isNotNull = F
-    } else if (string == ""){
-      isNotNull = F
+    if(length(string) == 0){
+      isNotNull = FALSE
     } else {
-      isNotNull = !any(splitConjString(string) == "/") & !any(splitConjString(string) == "") & !any(splitConjString(string) == "NMA!")
+      isNotNull = sapply(string, componentIsNotNull)
     }
+  }
+    
     return(isNotNull)
 }
 
@@ -90,53 +104,70 @@ write_csv(clauseTable, "dec28-correctedtable.csv")
 #Select only sentences that are potentially passivisable
 clauseTablePassivisable = clauseTable %>% filter(PredType == "V" & (Voice == "Pass" | ObjHead != "/" | OblHead != "/") & is.na(NonAlternable))
 clauseTablePassivisable %>% filter(Voice != "Act" & OblCase != "by")
-clauseTablePassivisable = clauseTablePassivisable %>% mutate(AgentSylCo = case_when(
-  Voice == "Act" & isNotNull(SubjSylCo) ~ as.numeric(SubjSylCo),
-  Voice == "Pass" & OblCase == "by" & !is.na(as.numeric(OblSylCo))  ~ as.numeric(OblSylCo),
-  TRUE ~ 9999
-))
 
 #Syllable count
-clauseTablePassivisable$AgentSylCo[clauseTablePassivisable$AgentSylCo == 9999] = median(clauseTablePassivisable$AgentSylCo[clauseTablePassivisable$AgentSylCo != 9999])
-clauseTablePassivisable = clauseTablePassivisable %>% mutate(ThemeSylCo = case_when(
+clauseTablePassivisable = clauseTablePassivisable %>% mutate(
+  AgentSylCo = case_when(
+  Voice == "Act" & isNotNull(SubjSylCo) ~ as.numeric(SubjSylCo),
+  Voice == "Pass" & OblCase == "by" & !is.na(as.numeric(OblSylCo))  ~ as.numeric(OblSylCo),
+  TRUE ~ 9999),
+  ThemeSylCo = case_when(
   Voice == "Act" & isNotNull(OblSylCo) ~ as.numeric(OblSylCo),
   Voice == "Act" & isNotNull(ObjSylCo) ~ as.numeric(ObjSylCo),
   Voice == "Pass" & !is.na(as.numeric(SubjSylCo))  ~ as.numeric(SubjSylCo),
   TRUE ~ 9999
 ))
 
-clauseTablePassivisable$AgentSylCo[clauseTablePassivisable$ThemeSylCo == 9999] = median(clauseTablePassivisable$ThemeSylCo[clauseTablePassivisable$AgentSylCo != 9999])
+clauseTablePassivisable$AgentSylCo[clauseTablePassivisable$AgentSylCo == 9999] = median(clauseTablePassivisable$AgentSylCo[clauseTablePassivisable$AgentSylCo != 9999])
 
-clauseTablePassivisable = clauseTablePassivisable %>% mutate(ThemeFreqAM = case_when(
-  Voice == "Act" & isNotNull(OblFreq) ~ mean(as.numeric(splitConjString(OblFreq))),
-  Voice == "Act" & isNotNull(ObjFreq) ~ mean(as.numeric(splitConjString(ObjFreq))),
-  Voice == "Pass" & !is.na(as.numeric(SubjFreq))  ~ mean(as.numeric(splitConjString(SubjFreq))),
-  TRUE ~ 9999
-))
+clauseTablePassivisable$ThemeSylCo[clauseTablePassivisable$ThemeSylCo == 9999] = median(clauseTablePassivisable$ThemeSylCo[clauseTablePassivisable$ThemeSylCo != 9999])
 
 #Frequency
-clauseTablePassivisable$ThemeFreqAM[clauseTablePassivisable$ThemeFreqAM == 9999] = median(clauseTablePassivisable$ThemeFreqAM[clauseTablePassivisable$ThemeFreqAM != 9999])
-
-clauseTablePassivisable = clauseTablePassivisable %>% mutate(AgentFreqAM = case_when(
-  Voice == "Act" & isNotNull(SubjFreq) ~ as.numeric(SubjFreq),
-  Voice == "Pass" & OblCase == "by" & !is.na(as.numeric(OblFreq))  ~ as.numeric(OblFreq),
+findFreqAM = function(freq){
+  if(all(isNotNull(freq))){
+    return(mean(as.numeric(splitConjString(freq))))
+  } else{
+    return(9999)
+  }
+}
+findFreqGM = function(freq){
+  if(all(isNotNull(freq))){
+    return(gmean(as.numeric(splitConjString(freq))))
+  } else{
+    return(9999)
+  }
+}
+clauseTablePassivisable = clauseTablePassivisable %>% mutate(
+  AgentFreqAM = case_when(
+  Voice == "Act" & isNotNull(SubjFreq) ~ sapply(SubjFreq, findFreqAM),
+  Voice == "Pass" & OblCase == "by" & isNotNull(OblFreq)  ~ sapply(OblFreq, findFreqAM),
+  TRUE ~ 9999
+  ),
+  ThemeFreqAM = case_when(
+  Voice == "Act" & isNotNull(OblFreq) ~ sapply(OblFreq, findFreqAM),
+  Voice == "Act" & isNotNull(ObjFreq) ~ sapply(ObjFreq, findFreqAM),
+  Voice == "Pass" & isNotNull(SubjFreq)  ~ sapply(SubjFreq, findFreqAM),
   TRUE ~ 9999
 ))
-clauseTablePassivisable$AgentFreqAM[clauseTablePassivisable$AgentFreqAM == 9999] = median(clauseTablePassivisable$AgentFreqAM[clauseTablePassivisable$ThemeFreqAM != 9999])
 
-clauseTablePassivisable = clauseTablePassivisable %>% mutate(ThemeFreqGM = case_when(
-  Voice == "Act" & isNotNull(OblFreq) ~ gmean(as.numeric(splitConjString(OblFreq))),
-  Voice == "Act" & isNotNull(ObjFreq) ~ gmean(as.numeric(splitConjString(ObjFreq))),
-  Voice == "Pass" & !is.na(as.numeric(SubjFreq))  ~ gmean(as.numeric(splitConjString(SubjFreq))),
+clauseTablePassivisable$ThemeFreqAM[clauseTablePassivisable$ThemeFreqAM == 9999] = median(clauseTablePassivisable$ThemeFreqAM[clauseTablePassivisable$ThemeFreqAM != 9999])
+
+clauseTablePassivisable$AgentFreqAM[clauseTablePassivisable$AgentFreqAM == 9999] = median(clauseTablePassivisable$AgentFreqAM[clauseTablePassivisable$AgentFreqAM != 9999])
+
+clauseTablePassivisable = clauseTablePassivisable %>% mutate(
+  ThemeFreqGM = case_when(
+  Voice == "Act" & isNotNull(OblFreq) ~ sapply(OblFreq, findFreqGM),
+  Voice == "Act" & isNotNull(ObjFreq) ~ sapply(ObjFreq, findFreqGM),
+  Voice == "Pass" & isNotNull(SubjFreq)  ~ sapply(SubjFreq, findFreqGM),
+  TRUE ~ 9999
+), AgentFreqGM = case_when(
+  Voice == "Act" & isNotNull(SubjFreq) ~ sapply(SubjFreq, findFreqGM),
+  Voice == "Pass" & OblCase == "by" & isNotNull(OblFreq)  ~ sapply(OblFreq, findFreqGM),
   TRUE ~ 9999
 ))
 clauseTablePassivisable$ThemeFreqGM[clauseTablePassivisable$ThemeFreqGM == 9999] = median(clauseTablePassivisable$ThemeFreqGM[clauseTablePassivisable$ThemeFreqGM != 9999])
 
-clauseTablePassivisable = clauseTablePassivisable %>% mutate(AgentFreqGM = case_when(
-  Voice == "Act" & isNotNull(SubjFreq) ~ as.numeric(SubjFreq),
-  Voice == "Pass" & OblCase == "by" & !is.na(as.numeric(OblFreq))  ~ as.numeric(OblFreq),
-  TRUE ~ 9999
-))
+clauseTablePassivisable = clauseTablePassivisable %>% mutate()
 clauseTablePassivisable$AgentFreqGM[clauseTablePassivisable$AgentFreqGM == 9999] = median(clauseTablePassivisable$AgentFreqGM[clauseTablePassivisable$ThemeFreqGM != 9999])
 
 #Person
@@ -183,6 +214,10 @@ animacyFeatureMatrix = matrix(c(1,0,0,1,1,1,#human
 agentAnimColnames = paste("Agent",animacyFeatures,sep="")
 agentAnimMatrix = matrix(0,nrow=nrow(clauseTablePassivisable),ncol=length(agentAnimColnames))
 colnames(agentAnimMatrix) = agentAnimColnames
+themeAnimColnames = paste("Theme",animacyFeatures,sep="")
+themeAnimMatrix = matrix(0,nrow=nrow(clauseTablePassivisable),ncol=length(themeAnimColnames))
+colnames(themeAnimMatrix) = themeAnimColnames
+
 for(i in 1:nrow(agentAnimMatrix)){
   AgentAnim = character(1)
   if(clauseTablePassivisable[i,"Voice"] == "Act"){
@@ -191,57 +226,81 @@ for(i in 1:nrow(agentAnimMatrix)){
     } else if(isNotNull(clauseTablePassivisable[i,"AgentAnim"])){
       AgentAnim = clauseTablePassivisable[i,"AgentAnim"]
     }
+    if(isNotNull(clauseTablePassivisable[i,"ObjAnim"])){
+      ThemeAnim = clauseTablePassivisable[i,"ObjAnim"]
+    } else if(isNotNull(clauseTablePassivisable[i,"OblAnim"])){
+      ThemeAnim = clauseTablePassivisable[i,"OblAnim"]
+    } #else if(isNotNull(clauseTablePassivisable[i,"ThemeAnim"])){
+      #ThemeAnim = clauseTablePassivisable[i,"ThemeAnim"]
+    #}
   } else {
     if(isNotNull(clauseTablePassivisable[i,"OblAnim"])){
       AgentAnim = clauseTablePassivisable[i,"OblAnim"]
-    } else if(isNotNull(clauseTablePassivisable[i,"ObjAnim"])){
-      AgentAnim = clauseTablePassivisable[i,"ObjAnim"]
     } else if(isNotNull(clauseTablePassivisable[i,"AgentAnim"])){
       AgentAnim = clauseTablePassivisable[i,"AgentAnim"]
     }
+    if(isNotNull(clauseTablePassivisable[i,"SubjAnim"])){
+      ThemeAnim = clauseTablePassivisable[i,"SubjAnim"]
+    } # else if(isNotNull(clauseTablePassivisable[i,"ThemeAnim"])){
+     # ThemeAnim = clauseTablePassivisable[i,"ThemeAnim"]
+    #}
   }
+  
   
   if(isNotNull(AgentAnim)){
     AgentAnims = splitConjString(as.character(AgentAnim))
     if(length(AgentAnims) == 1){
-      #print(paste("1",AgentAnims))
       agentAnimMatrix[i,] = animacyFeatureMatrix[AgentAnims,]
     } else {
-      #print(paste("M",AgentAnims))
       agentAnimMatrix[i,] = colMeans(animacyFeatureMatrix[AgentAnims,])
+    }
+  }
+  
+  if(isNotNull(ThemeAnim)){
+    ThemeAnims = splitConjString(as.character(ThemeAnim))
+    if(length(ThemeAnims) == 1){
+      themeAnimMatrix[i,] = animacyFeatureMatrix[ThemeAnims,]
+    } else {
+      themeAnimMatrix[i,] = colMeans(animacyFeatureMatrix[ThemeAnims,])
     }
   }
 }
 
-#TODO: Encode these
-clauseTablePassivisable = clauseTablePassivisable %>% mutate(AgentDefTrue = case_when(
-  Voice == "Act" & isNotNull(SubjDef) ~ SubjDef == "def",
-  Voice == "Pass" & isNotNull(OblDef) ~ OblDef == "def",
-  AgentDef != "/" & isNotNull(AgentDef) ~ AgentDef == "def",
-  TRUE ~ FALSE),
-  ThemeDefTrue = case_when(
-    Voice == "Pass" & isNotNull(SubjDef) ~ (SubjDef) == "def",
-    Voice == "Act" & isNotNull(ObjDef) ~ (ObjDef) == "def",
-    Voice == "Act" & isNotNull(OblDef) ~ (OblDef) == "def",
-    #isNotNull(ThemeDef) ~ ThemeDef == "def",
-    TRUE ~ FALSE)
-)
-
-
-clauseTablePassivisable = clauseTablePassivisable %>% mutate(AgentPlurTrue = case_when(
-  Voice == "Act" & isNotNull(SubjNum) ~ SubjNum == "Plur",
-  Voice == "Pass" & isNotNull(OblNum) ~ OblNum == "Plur",
-  isNotNull(AgentNum) ~ AgentNum == "Plur",
-  TRUE ~ FALSE),
-  ThemePlurTrue = case_when(
-    Voice == "Pass" & isNotNull(SubjNum) ~ (SubjNum) == "Plur",
-    Voice == "Act" & isNotNull(ObjNum) ~ (ObjNum) == "Plur",
-    Voice == "Act" & isNotNull(OblNum) ~ (OblNum) == "Plur",
-    #isNotNull(ThemePlur) ~ ThemePlur == "Plur",
-    TRUE ~ FALSE)
-)
-
 clauseTablePassivisable = cbind(clauseTablePassivisable, agentAnimMatrix)
+clauseTablePassivisable = cbind(clauseTablePassivisable, themeAnimMatrix)
+
+#Definiteness
+determineDef = function(def){
+  splitString = splitConjString(def)
+  return(mean(splitString == "def"))
+}
+
+clauseTablePassivisable = clauseTablePassivisable %>% mutate(AgentDefTrue = case_when(
+  Voice == "Act" & isNotNull(SubjDef) ~ sapply(SubjDef, determineDef),
+  Voice == "Pass" & isNotNull(OblDef) ~ sapply(OblDef, determineDef),
+  AgentDef != "/" & isNotNull(AgentDef) ~ sapply(AgentDef, determineDef),
+  TRUE ~ 0),
+  ThemeDefTrue = case_when(
+    Voice == "Pass" & isNotNull(SubjDef) ~ sapply(SubjDef, determineDef),
+    Voice == "Act" & isNotNull(ObjDef) ~ sapply(ObjDef, determineDef),
+    Voice == "Act" & isNotNull(OblDef) ~ sapply(OblDef, determineDef),
+    #isNotNull(ThemeDef) ~ sapply(ThemeDef, determineDef),
+    TRUE ~ 0)
+)
+
+#Number
+clauseTablePassivisable = clauseTablePassivisable %>% mutate(AgentPlurTrue = case_when(
+  Voice == "Act" & isNotNull(SubjNum) ~ as.integer(SubjNum == "Plur"),
+  Voice == "Pass" & isNotNull(OblNum) ~ as.integer(OblNum == "Plur"),
+  isNotNull(AgentNum) ~ as.integer(AgentNum == "Plur"),
+  TRUE ~ 0L),
+  ThemePlurTrue = case_when(
+    Voice == "Pass" & isNotNull(SubjNum) ~ as.integer(SubjNum == "Plur"),
+    Voice == "Act" & isNotNull(ObjNum) ~ as.integer(ObjNum == "Plur"),
+    Voice == "Act" & isNotNull(OblNum) ~ as.integer(OblNum == "Plur"),
+    #isNotNull(ThemeNum) ~ as.integer(ThemeNum == "Plur"),
+    TRUE ~ 0L)
+)
 
 #Prev mentioned?
 givennessTable = data.frame()
@@ -266,11 +325,9 @@ for(doc in docs){
   
   currSentTable = sentCorefTable %>% filter(Doc == doc) %>% select(-c(OverallSentID))
   chains = sapply(currSentTable$Chains, splitChainString) #Note: element 1 of chains = SentID 0
-  chainCol = chains[currClauseTable$SentID] #A 'column' containing chain data, if tibbles allowed vector-valued cells
+
   currClauseTable = currClauseTable %>% mutate(CombinedOblChain = paste(OblChain,Obl2Chain,Obl3Chain,sep=","))
   currFullClauseTable = currFullClauseTable %>% mutate(CombinedOblChain = paste(OblChain,Obl2Chain,Obl3Chain,sep=","))
-  
-  
   
   #TODO: Previously mentioned in the same sentence? 
   
@@ -311,6 +368,7 @@ clauseTablePassivisable = clauseTablePassivisable %>% mutate(AgentPrevAppearedSa
     TRUE ~ 0L)
 )
 
+#NP type
 synTypeLevels = c("full", "proper", "wh", "det", "dem", "poss","pron", "num", "there")
 synTypeFeatures = c("Pronominal","Proper","Wh","Dem","Poss","Numeral","Det")
 synTypeFeatureMatrix = matrix(c(0,0,0,0,0,0,0,#full
@@ -325,13 +383,21 @@ synTypeFeatureMatrix = matrix(c(0,0,0,0,0,0,0,#full
                               ,nrow=9,byrow=T,dimnames = list(synTypeLevels,synTypeFeatures))
 
 agentSynTypeColnames = paste("Agent",synTypeFeatures,sep="")
+themeSynTypeColnames = paste("Agent",synTypeFeatures,sep="")
 agentSynTypeMatrix = matrix(0,nrow=nrow(clauseTablePassivisable),ncol=length(agentSynTypeColnames))
+themeSynTypeMatrix = matrix(0,nrow=nrow(clauseTablePassivisable),ncol=length(themeSynTypeColnames))
 colnames(agentSynTypeMatrix) = agentSynTypeColnames
+colnames(themeSynTypeMatrix) = themeSynTypeColnames
 for(i in 1:nrow(agentSynTypeMatrix)){
   AgentSynType = character(1)
   if(clauseTablePassivisable[i,"Voice"] == "Act"){
     if(isNotNull(clauseTablePassivisable[i,"SubjSynType"])){
       AgentSynType = clauseTablePassivisable[i,"SubjSynType"]
+    }
+    if(isNotNull(clauseTablePassivisable[i,"ObjSynType"])){
+      ThemeSynType = clauseTablePassivisable[i,"ObjSynType"]
+    } else if(isNotNull(clauseTablePassivisable[i,"OblSynType"])){
+      ThemeSynType = clauseTablePassivisable[i,"OblSynType"]
     }
   } else {
     if(isNotNull(clauseTablePassivisable[i,"OblSynType"])){
@@ -339,23 +405,37 @@ for(i in 1:nrow(agentSynTypeMatrix)){
     } else if(isNotNull(clauseTablePassivisable[i,"ObjSynType"])){
       AgentSynType = clauseTablePassivisable[i,"ObjSynType"]
     }
+    if(isNotNull(clauseTablePassivisable[i,"SubjSynType"])){
+      ThemeSynType = clauseTablePassivisable[i,"SubjSynType"]
+    }  else if(isNotNull(clauseTablePassivisable[i,"ThemeSynType"])){
+      ThemeSynType = clauseTablePassivisable[i,"ThemeSynType"]
+    }
   }
   
   if(isNotNull(AgentSynType)){
     print(AgentSynType)
     AgentSynTypes = splitConjString(as.character(AgentSynType))
     if(length(AgentSynTypes) == 1){
-      #print(paste("1",AgentSynTypes))
       agentSynTypeMatrix[i,] = synTypeFeatureMatrix[AgentSynTypes,]
     } else {
-      #print(paste("M",AgentSynTypes))
       agentSynTypeMatrix[i,] = colMeans(synTypeFeatureMatrix[AgentSynTypes,])
+    }
+  }
+  
+  if(isNotNull(ThemeSynType)){
+    print(ThemeSynType)
+    ThemeSynTypes = splitConjString(as.character(ThemeSynType))
+    if(length(ThemeSynTypes) == 1){
+      themeSynTypeMatrix[i,] = synTypeFeatureMatrix[ThemeSynTypes,]
+    } else {
+      themeSynTypeMatrix[i,] = colMeans(synTypeFeatureMatrix[ThemeSynTypes,])
     }
   }
   
 }
 
 clauseTablePassivisable = clauseTablePassivisable %>% cbind(agentSynTypeMatrix)
+clauseTablePassivisable = clauseTablePassivisable %>% cbind(themeSynTypeMatrix)
 
 
 write_csv(clauseTablePassivisable, "encoded-dec28.csv")
@@ -364,8 +444,8 @@ write_csv(clauseTablePassivisable, "encoded-dec28.csv")
 lambda_ridge = 0
 ridge_vars = stanvar(x = lambda_ridge, name = "lambda_ridge") + stanvar(scode = "target += - lambda_ridge * dot_self(b);", block = "model")
 
-pred_only_model_3000 = brm(paste("Voice ~ (1 | PredLemma) + (1 | Doc) + AgentSylCo + AgentFreqAM + AgentFreqGM + AgentPersEgo + AgentPersSAP +  AgentConcrete + AgentSetting + AgentAgentCollective + AgentDisplacable + AgentVolitional + AgentMoving + AgentDefTrue + AgentPlurTrue + ThemeSylCo + ThemeFreqAM + ThemeFreqGM + ThemePersEgo + ThemePersSAP + ThemeDefTrue + ThemePlurTrue + PredAspect + PredTense + PredFreq + PredFin + PredSylCo + AgentPrevAppeared + ThemePrevAppeared + AgentPrevAppearedSamePos + ThemePrevAppearedSamePos + AgentPronominal + AgentProper + AgentWh + AgentDem  + AgentNumeral + AgentDet"), data = clauseTablePassivisable, family = bernoulli(link = "logit"), init_r = 20, prior = set_prior("lasso(1)"), cores = getOption("mc.cores", 4L), stanvars = ridge_vars, chains = 1)
-
+pred_only_model_3000 = brm(paste("Voice ~ (1 | PredLemma) + (1 | Doc) + AgentSylCo + AgentFreqAM + AgentFreqGM + AgentPersEgo + AgentPersSAP +  AgentConcrete + AgentSetting + AgentAgentCollective + AgentDisplacable + AgentVolitional + AgentMoving + AgentDefTrue + AgentPlurTrue  + AgentPronominal + AgentProper + AgentWh + AgentDem  + AgentNumeral + AgentDet + ThemeSylCo + ThemeFreqAM + ThemeFreqGM + ThemePersEgo + ThemePersSAP + ThemeDefTrue + ThemePlurTrue + +  ThemeConcrete + ThemeSetting + ThemeThemeCollective + ThemeDisplacable + ThemeVolitional + ThemeMoving + ThemeDefTrue + ThemePlurTrue  + ThemePronominal + ThemeProper
+ AgentWh + AgentDem  + AgentNumeral + AgentDet +  PredAspect + PredTense + PredFreq + PredFin + PredSylCo + AgentPrevAppeared + ThemePrevAppeared + AgentPrevAppearedSamePos + ThemePrevAppearedSamePos"), data = clauseTablePassivisable, family = bernoulli(link = "logit"), init_r = 20, prior = set_prior("lasso(1)"), cores = getOption("mc.cores", 4L), stanvars = ridge_vars, chains = 1)
 
 
 
