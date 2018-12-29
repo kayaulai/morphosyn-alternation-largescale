@@ -1,4 +1,17 @@
 
+
+waicModel = list()
+for(lambda_lasso in exp(seq(-10,10,2.5))){
+  for(lambda_ridge in exp(seq(-10,10,2.5))){
+        ridge_vars = stanvar(x = lambda_ridge, name = "lambda_ridge") + stanvar(scode = "target += - lambda_ridge * dot_self(b);", block = "model") + stanvar(x = lambda_lasso, name = "lambda_lasso") + stanvar(scode = "for(k in 1:K) target += - lambda_lasso * fabs(b);", block = "model")
+        pred_only_model_3000 = brm(paste("Voice ~ (1 | PredLemma) + (1 | Doc) + AgentSylCo + AgentFreqAM  + AgentPersEgo + AgentPersSAP +  AgentHuman + AgentConcrete + AgentSetting + AgentAgentCollective + AgentDisplacable + AgentVolitional + AgentMoving + AgentDefTrue + AgentPlurTrue  + AgentPronominal + AgentProper + AgentWh + AgentDem  + AgentNumeral + AgentDet + ThemeSylCo + ThemeFreqAM  + ThemePersEgo + ThemePersSAP + ThemeDefTrue + ThemePlurTrue + ThemeHuman + ThemeConcrete + ThemeSetting + ThemeAgentCollective + ThemeDisplacable + ThemeVolitional + ThemeMoving + ThemeDefTrue + ThemePlurTrue  + ThemePronominal + ThemeProper +  AgentWh + AgentDem  + AgentNumeral + AgentDet +  PredAspect + PredTense + PredFreq + PredFin + PredSylCo + AgentPrevAppeared + ThemePrevAppeared + AgentPrevAppearedSamePos + ThemePrevAppearedSamePos"), data = clauseTablePassivisable, family = bernoulli(link = "logit"), init_r = 20, cores = getOption("mc.cores", 4L), stanvars = ridge_vars, chains = 1)
+        modelName = paste("model","_",lambda_lasso,"/",lambda_ridge,sep="")
+        waicModel[[modelName]] = waic(pred_only_model_3000)
+  }
+}
+
+
+
 lambda_ridge = exp(-10)
 ridge_vars = stanvar(x = lambda_ridge, name = "lambda_ridge") + stanvar(scode = "target += - lambda_ridge * dot_self(b);", block = "model")
 

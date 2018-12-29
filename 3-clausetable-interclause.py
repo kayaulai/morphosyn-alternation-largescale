@@ -16,29 +16,22 @@ Created on Fri Sep 14 06:59:55 2018
 #Run this whenever restarting.
 import os;
 os.chdir("G:\我的雲端硬碟\corpus priming\eng")
-import warnings;
 #os.chdir("G:\My Drive\corpus priming\eng")
 import pandas as pd;
-import re;
 import shelve;
 import numpy as np;
-from wordfreq import word_frequency;
 from nltk.stem import WordNetLemmatizer
 wnl = WordNetLemmatizer()
 import nltk;
 #https://stackoverflow.com/a/4103234
-def nsyl(word):
-  return [len(list(y for y in x if y[-1].isdigit())) for x in d[word.lower()]] 
-from nltk import word_tokenize, pos_tag, ne_chunk, tree
 nltk.download('verbnet');
-import csvkit
 s = shelve.open("G:\\我的雲端硬碟\\corpus priming\\eng\\rawdata.dat");
 allSents = s["allSents"];
 s.close();
 pd.set_option("max_columns",50)
 from nltk.stem import WordNetLemmatizer
 wnl = WordNetLemmatizer()
-clauseTable = pd.read_csv("G:\\我的雲端硬碟\\corpus priming\\eng\\dec26table-first3000-v3.csv", engine='python');
+clauseTable = pd.read_csv("G:\\我的雲端硬碟\\corpus priming\\eng\\dec28table-first3000-v3.csv", engine='python');
 
 #https://stackoverflow.com/a/40093482/9505928
 which = lambda lst:list(np.where(lst)[0])
@@ -168,4 +161,4 @@ for clause in newClauseTable.iterrows():
     prevClausesTable = prevClausesTable.append(currRow,ignore_index=True)
     
 newClauseTable = pd.concat([newClauseTable,prevClausesTable], axis=1)
-newClauseTable.to_csv(path_or_buf="dec26-table-withintersentence.csv")
+newClauseTable.to_csv(path_or_buf="dec28-table-withintersentence.csv")

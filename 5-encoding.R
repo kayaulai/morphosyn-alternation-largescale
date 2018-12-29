@@ -62,7 +62,7 @@ isNotNull = function(string){
 }
 
 #Read CSV
-clauseTable = read_csv("dec26-table-withintersentence.csv")
+clauseTable = read_csv("dec28-table-withintersentence.csv")
 clauseTable$PredFreq = parse_double(clauseTable$PredFreq)
 clauseTable$PredSylCo = parse_double(clauseTable$PredSylCo)
 clauseTable$Voice = parse_factor(clauseTable$Voice, levels = c("Act","Pass"))
@@ -168,7 +168,7 @@ clauseTablePassivisable = clauseTablePassivisable %>% mutate(
 clauseTablePassivisable$ThemeFreqGM[clauseTablePassivisable$ThemeFreqGM == 9999] = median(clauseTablePassivisable$ThemeFreqGM[clauseTablePassivisable$ThemeFreqGM != 9999])
 
 clauseTablePassivisable = clauseTablePassivisable %>% mutate()
-clauseTablePassivisable$AgentFreqGM[clauseTablePassivisable$AgentFreqGM == 9999] = median(clauseTablePassivisable$AgentFreqGM[clauseTablePassivisable$ThemeFreqGM != 9999])
+clauseTablePassivisable$AgentFreqGM[clauseTablePassivisable$AgentFreqGM == 9999] = median(clauseTablePassivisable$AgentFreqGM[clauseTablePassivisable$AgentFreqGM != 9999])
 
 #Person
 clauseTablePassivisable = clauseTablePassivisable %>% mutate(AgentPersEgo = case_when(
@@ -198,16 +198,16 @@ clauseTablePassivisable = clauseTablePassivisable %>% mutate(AgentPersEgo = case
 
 #Animacy
 animacyLevels = c("human", "machine", "vehicle", "org", "animal", "time", "loc", "conc", "nonconc")
-animacyFeatures = c("Concrete","Setting","AgentCollective","Moving","Displacable","Volitional")
-animacyFeatureMatrix = matrix(c(1,0,0,1,1,1,#human
-                              1,0,0,1,0,0,#machine
-                              1,0,0,1,1,0,#vehicle
-                              1,0,1,1,1,1,#org
-                              1,0,1,1,1,1,#animal
-                              0,1,0,0,0,0,#time
-                              1,1,0,0,0,0,#loc
-                              1,0,0,0,0,0,#conc
-                              0,0,0,0,0,0)#nonconc
+animacyFeatures = c("Concrete","Setting","AgentCollective","Moving","Displacable","Volitional","Human")
+animacyFeatureMatrix = matrix(c(1,0,0,1,1,1,1,#human
+                              1,0,0,1,0,0,0,#machine
+                              1,0,0,1,1,0,0,#vehicle
+                              1,0,1,1,1,1,1,#org
+                              1,0,0,1,1,1,0,#animal
+                              0,1,0,0,0,0,0,#time
+                              1,1,0,0,0,0,0,#loc
+                              1,0,0,0,0,0,0,#conc
+                              0,0,0,0,0,0,0)#nonconc
   ,nrow=9,byrow=T,dimnames = list(animacyLevels,animacyFeatures)
 )
 
@@ -383,7 +383,7 @@ synTypeFeatureMatrix = matrix(c(0,0,0,0,0,0,0,#full
                               ,nrow=9,byrow=T,dimnames = list(synTypeLevels,synTypeFeatures))
 
 agentSynTypeColnames = paste("Agent",synTypeFeatures,sep="")
-themeSynTypeColnames = paste("Agent",synTypeFeatures,sep="")
+themeSynTypeColnames = paste("Theme",synTypeFeatures,sep="")
 agentSynTypeMatrix = matrix(0,nrow=nrow(clauseTablePassivisable),ncol=length(agentSynTypeColnames))
 themeSynTypeMatrix = matrix(0,nrow=nrow(clauseTablePassivisable),ncol=length(themeSynTypeColnames))
 colnames(agentSynTypeMatrix) = agentSynTypeColnames
@@ -438,17 +438,18 @@ clauseTablePassivisable = clauseTablePassivisable %>% cbind(agentSynTypeMatrix)
 clauseTablePassivisable = clauseTablePassivisable %>% cbind(themeSynTypeMatrix)
 
 
+clauseTablePassivisable = clauseTablePassivisable %>% mutate(PredPerf = PredAspect %in% c("Perf","PerfProg"), PredProg = PredAspect %in% c("Prog","PerfProg"))
+
 write_csv(clauseTablePassivisable, "encoded-dec28.csv")
 
-#lambda_ridge = exp(-10)
-lambda_ridge = 0
-ridge_vars = stanvar(x = lambda_ridge, name = "lambda_ridge") + stanvar(scode = "target += - lambda_ridge * dot_self(b);", block = "model")
+lambda_ridge = exp(0)
+lambda_lasso = exp(0)
+#lambda_ridge = 0
+ridge_vars = stanvar(x = lambda_ridge, name = "lambda_ridge") + stanvar(scode = "target += - lambda_ridge * dot_self(b);", block = "model") + stanvar(x = lambda_lasso, name = "lambda_lasso") + stanvar(scode = "for(k in 1:K) target += - lambda_lasso * fabs(b);", block = "model")
 
-pred_only_model_3000 = brm(paste("Voice ~ (1 | PredLemma) + (1 | Doc) + AgentSylCo + AgentFreqAM + AgentFreqGM + AgentPersEgo + AgentPersSAP +  AgentConcrete + AgentSetting + AgentAgentCollective + AgentDisplacable + AgentVolitional + AgentMoving + AgentDefTrue + AgentPlurTrue  + AgentPronominal + AgentProper + AgentWh + AgentDem  + AgentNumeral + AgentDet + ThemeSylCo + ThemeFreqAM + ThemeFreqGM + ThemePersEgo + ThemePersSAP + ThemeDefTrue + ThemePlurTrue + +  ThemeConcrete + ThemeSetting + ThemeThemeCollective + ThemeDisplacable + ThemeVolitional + ThemeMoving + ThemeDefTrue + ThemePlurTrue  + ThemePronominal + ThemeProper
- AgentWh + AgentDem  + AgentNumeral + AgentDet +  PredAspect + PredTense + PredFreq + PredFin + PredSylCo + AgentPrevAppeared + ThemePrevAppeared + AgentPrevAppearedSamePos + ThemePrevAppearedSamePos"), data = clauseTablePassivisable, family = bernoulli(link = "logit"), init_r = 20, prior = set_prior("lasso(1)"), cores = getOption("mc.cores", 4L), stanvars = ridge_vars, chains = 1)
+pred_only_model_3000 = brm(paste("Voice ~ (1 | PredLemma) + (1 | Doc) + AgentSylCo + AgentFreqAM  + AgentPersEgo + AgentPersSAP +  AgentHuman + AgentConcrete + AgentSetting + AgentAgentCollective + AgentDisplacable + AgentVolitional + AgentMoving + AgentDefTrue + AgentPlurTrue  + AgentPronominal + AgentProper + AgentWh + AgentDem  + AgentNumeral + AgentDet + ThemeSylCo + ThemeFreqAM  + ThemePersEgo + ThemePersSAP + ThemeDefTrue + ThemePlurTrue + ThemeHuman + ThemeConcrete + ThemeSetting + ThemeAgentCollective + ThemeDisplacable + ThemeVolitional + ThemeMoving + ThemeDefTrue + ThemePlurTrue  + ThemePronominal + ThemeProper +  AgentWh + AgentDem  + AgentNumeral + AgentDet +  PredAspect + PredTense + PredFreq + PredFin + PredSylCo + AgentPrevAppeared + ThemePrevAppeared + AgentPrevAppearedSamePos + ThemePrevAppearedSamePos"), data = clauseTablePassivisable, family = bernoulli(link = "logit"), init_r = 20, cores = getOption("mc.cores", 4L), stanvars = ridge_vars, chains = 1)
 
 
-
-stanplot(pred_only_model_3000, c("AgentSylCo", "AgentFreqAM", "AgentFreqGM", "AgentPersEgo", "AgentPersSAP", " AgentConcrete", "AgentSetting", "AgentAgentCollective", "AgentDisplacable", "AgentVolitional", "AgentMoving", "AgentDefTrue", "AgentPlurTrue", "AgentPronominal", "AgentProper", "AgentWh", "AgentDem",  "AgentNumeral", "AgentDet", "ThemeSylCo", "ThemeFreqAM", "ThemeFreqGM", "ThemePersEgo", "ThemePersSAP", "ThemeDefTrue", "ThemePlurTrue", "PredAspect", "PredTense", "PredFreq", "PredFin", "PredSylCo", "AgentPrevAppeared", "ThemePrevAppeared", "AgentPrevAppearedSamePos", "ThemePrevAppearedSamePos"))
+stanplot(pred_only_model_3000, c("AgentSylCo", "AgentFreqAM", "AgentPersEgo", "AgentPersSAP", "AgentHuman", " AgentConcrete", "AgentSetting", "AgentAgentCollective", "AgentDisplacable", "AgentVolitional", "AgentMoving", "AgentDefTrue", "AgentPlurTrue", "AgentPronominal", "AgentProper", "AgentWh", "AgentDem",  "AgentNumeral", "AgentDet", "ThemeSylCo", "ThemeFreqAM", "ThemeFreqGM", "ThemePersEgo", "ThemePersSAP", "ThemeDefTrue", "ThemePlurTrue", "PredAspect", "PredTense", "PredFreq", "PredFin", "PredSylCo", "ThemeHuman", "ThemeConcrete", "ThemeSetting", "ThemeAgentCollective", "ThemeDisplacable", "ThemeVolitional", "ThemeMoving", "ThemeDefTrue", "ThemePlurTrue ", "ThemePronominal", "ThemeProper", "AgentPrevAppeared", "ThemePrevAppeared", "AgentPrevAppearedSamePos", "ThemePrevAppearedSamePos"))
 waic(pred_only_model_3000)
 

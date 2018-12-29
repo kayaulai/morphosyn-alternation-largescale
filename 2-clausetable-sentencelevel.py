@@ -5,6 +5,7 @@
 #Expletive subject -> NOT passivisable
 #Promote obliques
 #Implicit objects
+#Not-really-implicit passive subjects should have syntactic properties
 
 #Manual annotation todos:
 #-NMAs and /s
@@ -667,7 +668,7 @@ def extractPredProperties(predID, phrase, prefix):
     k = len(auxiliaries);
     for aux in auxiliaries:
         auxHead = getHeads(predID+1,aux)[0];
-        auxLemmas[k-1] = auxHead["LEMMA"];
+        auxLemmas[len(auxiliaries)-k] = auxHead["LEMMA"];
         auxInfo = getInfoFromFeats(auxHead["FEATS"]);
         props["Aux" + str(k)] = auxHead["FORM"];
         if k == 1:
@@ -736,7 +737,7 @@ def extractPredProperties(predID, phrase, prefix):
     if len(auxiliaries) > 0:
         if (props["Aux1"] == "being") | (props["Aux1"] == "getting"):
             props[prefix + "Aspect"] = "Prog";
-    if (getValueFromInfo(featsInfo,"VerbForm") == "Part" and getValueFromInfo(featsInfo,"VerbForm") == "Pres") or getValueFromInfo(featsInfo,"VerbForm") == "Ger":
+    if (getValueFromInfo(featsInfo,"VerbForm") == "Part" and getValueFromInfo(featsInfo,"Tense") == "Pres") or getValueFromInfo(featsInfo,"VerbForm") == "Ger":
         props[prefix + "Aspect"] = "Prog";
         
     for aux in auxLemmas:
@@ -758,8 +759,8 @@ nomSemExceptions = ["member"]
 
 
 #allSentsR = allSents[(860+579+7940+307+229+12+3929):] #R stands for reduced and is for testing purposes
-allSentsR = allSents[0:100]
-#allSentsR = allSents[0:1350]
+#allSentsR = allSents[0:100]
+allSentsR = allSents[0:1350]
 
 #TODO: Embedding depth, idiomaticity, 
 clauseTableColnames = ["ClauseID","Doc","SentID","SentForm","ClauseForm","PredType",
@@ -1006,7 +1007,7 @@ for sentence in allSentsR:
                     
                     if currCovertObject:
                         covertObjectHeads = getHeads(i+1,currCovertObject,RC=True);
-                        covertObjHeadProps = extractNPHeadProperties(covertObjectHeads,"Obj");
+                        covertObjHeadProps = extractNPHeadProperties(covertObjectHeads,"Obj",sentence);
                         objHeadProps = combineNPFeatures(covertObjHeadProps,objHeadProps,"Obj");
                         
                     for prop in objHeadProps:
